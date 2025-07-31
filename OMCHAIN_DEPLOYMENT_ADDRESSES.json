@@ -1,0 +1,56 @@
+{
+  "network": "OM Chain",
+  "chainId": 1246,
+  "deploymentTimestamp": "2025-07-31T01:20:51.548Z",
+  "deployer": "0x42a7ca42C90448A7f70970C14c34D9cd4D3309A6",
+  "contracts": {
+    "OMTHBToken": {
+      "proxy": "0x3A7ACDc2568D3839E1aB3fAEa48e21c03FEd2161",
+      "implementation": "0x366c111fC0cdb7B15E6b021fB8614569E41FA4B2",
+      "type": "UUPS Upgradeable",
+      "verified": true
+    },
+    "GasTank": {
+      "address": "0x25D70c51552CBBdd8AE70DF6E56b22BC964FdB9C",
+      "type": "Standard",
+      "initialFunding": "10.0 OM",
+      "verified": true
+    },
+    "MetaTxForwarder": {
+      "address": "0xe46b8D73Aa3435dA5FceE93741Bd61Ca71B3d347",
+      "type": "Standard",
+      "verified": true
+    },
+    "ProjectFactory": {
+      "address": "0x8db0344555a502b546E8ea0725c8F75cAeeFfCe1",
+      "type": "Standard",
+      "verified": false
+    },
+    "ProjectReimbursementMultiRecipient": {
+      "implementation": "0x1100ED4175BB828958396a708278D46146e1748b",
+      "type": "Clone Implementation",
+      "verified": false
+    }
+  },
+  "testProject": {
+    "address": "0xbf8BAD20A2A7d4fEe8D67F4c826FaDC3De46cb53",
+    "projectId": "TEST-PROJECT-001",
+    "budget": "10000.0 OMTHB",
+    "currentBalance": "20000.0 OMTHB",
+    "firstRequestId": 0,
+    "firstRequestAmount": "300.0 OMTHB",
+    "firstRequestRecipients": 3
+  },
+  "explorerUrls": {
+    "omthbToken": "https://omscan.omplatform.com/address/0x3A7ACDc2568D3839E1aB3fAEa48e21c03FEd2161",
+    "gasTank": "https://omscan.omplatform.com/address/0x25D70c51552CBBdd8AE70DF6E56b22BC964FdB9C",
+    "metaTxForwarder": "https://omscan.omplatform.com/address/0xe46b8D73Aa3435dA5FceE93741Bd61Ca71B3d347",
+    "projectFactory": "https://omscan.omplatform.com/address/0x8db0344555a502b546E8ea0725c8F75cAeeFfCe1",
+    "projectImplementation": "https://omscan.omplatform.com/address/0x1100ED4175BB828958396a708278D46146e1748b",
+    "testProject": "https://omscan.omplatform.com/address/0xbf8BAD20A2A7d4fEe8D67F4c826FaDC3De46cb53"
+  },
+  "transactionHashes": {
+    "projectCreation": "0x70f97de590ecc739d81c12464e5279e55d9f558c9c63dd821db70f1413a7cc74",
+    "firstRequest": "0x074c8566e1d32d3c7f36fd0425ea8b2a4ad6288df5c256e95ebce2228840c58b"
+  }
+}

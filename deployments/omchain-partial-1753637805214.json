@@ -1,0 +1,18 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "deployedAt": "2025-07-27T17:36:45.214Z",
+  "state": {
+    "contracts": {
+      "OMTHBToken": {
+        "proxy": "0xb69c9a0998AC337fd7101D5eE710176030b186b1",
+        "implementation": "0xc72A6698fD9AD11807BaA2976195fF3B36C6FEe0"
+      }
+    },
+    "errors": [],
+    "completed": [
+      "OMTHBToken"
+    ]
+  },
+  "status": "complete"
+}
