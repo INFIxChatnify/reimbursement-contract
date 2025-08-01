@@ -131,15 +131,14 @@ contract BeaconProjectFactory is AccessControl, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice Create a new project
+     * @notice Create a new project without initial OMTHB transfer
      * @param projectId Unique project identifier
-     * @param budget Initial project budget
      * @param projectAdmin Admin address for the project
      * @return projectAddress The deployed project contract address
+     * @dev Projects now start with 0 balance and require deposits after creation
      */
     function createProject(
         string calldata projectId,
-        uint256 budget,
         address projectAdmin
     ) external onlyRole(PROJECT_CREATOR_ROLE) nonReentrant whenNotPaused returns (address) {
         // Enhanced validation
@@ -147,17 +146,15 @@ contract BeaconProjectFactory is AccessControl, ReentrancyGuard, Pausable {
         if (bytes(projectId).length > 100) revert InvalidProjectId();
         if (projects[projectId].projectContract != address(0)) revert ProjectExists();
         if (projectAdmin == address(0)) revert ZeroAddress();
-        if (budget == 0) revert InvalidBudget();
-        if (budget > 10**9 * 10**18) revert InvalidBudget(); // Max 1 billion tokens
         
-        // Deploy beacon proxy
+        // Deploy beacon proxy with 0 initial budget
         BeaconProxy proxy = new BeaconProxy(
             address(beacon),
             abi.encodeWithSelector(
                 ProjectReimbursement.initialize.selector,
                 projectId,
                 address(omthbToken),
-                budget,
+                0, // Start with 0 budget
                 projectAdmin
             )
         );
@@ -176,7 +173,7 @@ contract BeaconProjectFactory is AccessControl, ReentrancyGuard, Pausable {
         projectsByCreator[msg.sender].push(projectId);
         allProjectIds.push(projectId);
         
-        emit ProjectCreated(projectId, projectContract, msg.sender, budget);
+        emit ProjectCreated(projectId, projectContract, msg.sender, 0);
         
         return projectContract;
     }

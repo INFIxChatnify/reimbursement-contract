@@ -1,0 +1,14 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "timestamp": "2025-08-01T12:43:01.549Z",
+  "deployer": "0x4e2bAD765362a397366d4630A02B5bed7692BE3a",
+  "contracts": {
+    "OMTHBToken": "0x2AEa4cd271eabAfea140fF8fDEaC012a7A2f4CF4",
+    "ReimbursementLib": "0xC9DD8222Dc11A1929BbD3b0c738D36dd8bfea3a8",
+    "RoleManagementLib": "0x5397BF13B4B28f312376F22d0B7640D0cD004Ef0",
+    "ProjectReimbursementOptimized": "0x84D14Ea341c637F586E9c16D060D463A1Ca61815",
+    "ProjectFactoryOptimized": "0xc495b4B30ed3D32FF45D5f8dA10885850C2d39dF",
+    "BeaconProjectFactoryOptimized": "0xab2f7988B2f6e89558b22E1AD2aFE4F4A310631a"
+  }
+}

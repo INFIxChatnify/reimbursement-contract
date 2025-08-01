@@ -1,0 +1,16 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "deployedAt": "2025-08-01T10:00:00.000Z",
+  "deployer": "0x4e2bAD765362a397366d4630A02B5bed7692BE3a",
+  "contracts": {
+    "OMTHBToken": {
+      "address": "0x2AEa4cd271eabAfea140fF8fDEaC012a7A2f4CF4",
+      "implementation": "pending"
+    },
+    "MinimalForwarder": {
+      "address": "0x12004Caa99D80512f61e9d4ACB61C024370C0eFF"
+    }
+  },
+  "notes": "ProjectReimbursement contracts exceed OMChain's code size limit. Consider optimizing or splitting functionality."
+}

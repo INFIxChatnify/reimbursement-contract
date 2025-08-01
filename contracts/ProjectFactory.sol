@@ -134,16 +134,14 @@ contract ProjectFactory is AccessControl, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice Create a new project with OMTHB token locking
+     * @notice Create a new project without initial OMTHB transfer
      * @param projectId Unique project identifier
-     * @param budget Initial project budget
      * @param projectAdmin Admin address for the project
      * @return projectAddress The deployed project contract address
-     * @dev Project creator must approve Factory for exact budget amount before calling
+     * @dev Projects now start with 0 balance and require deposits after creation
      */
     function createProject(
         string calldata projectId,
-        uint256 budget,
         address projectAdmin
     ) external onlyRole(PROJECT_CREATOR_ROLE) nonReentrant whenNotPaused returns (address) {
         // Enhanced validation
@@ -151,25 +149,15 @@ contract ProjectFactory is AccessControl, ReentrancyGuard, Pausable {
         if (bytes(projectId).length > 100) revert InvalidProjectId();
         if (projects[projectId].projectContract != address(0)) revert ProjectExists();
         if (projectAdmin == address(0)) revert ZeroAddress();
-        if (budget == 0) revert InvalidBudget();
-        if (budget > 10**9 * 10**18) revert InvalidBudget(); // Max 1 billion tokens
-        
-        // NEW: Check token allowance from creator
-        uint256 allowance = omthbToken.allowance(msg.sender, address(this));
-        if (allowance < budget) revert InsufficientAllowance();
-        
-        // NEW: Check creator's balance
-        uint256 creatorBalance = omthbToken.balanceOf(msg.sender);
-        if (creatorBalance < budget) revert InsufficientBalance();
         
         // Deploy minimal proxy
         address clone = projectImplementation.clone();
         
-        // Initialize the project contract
+        // Initialize the project contract with 0 budget
         try ProjectReimbursement(clone).initialize(
             projectId,
             address(omthbToken),
-            budget,
+            0, // Start with 0 budget
             projectAdmin
         ) {} catch Error(string memory reason) {
             revert(string(abi.encodePacked("Failed to initialize project: ", reason)));
@@ -186,43 +174,6 @@ contract ProjectFactory is AccessControl, ReentrancyGuard, Pausable {
             // Role might already be granted or function might not exist in older versions
         }
         
-        // SECURITY FIX CRITICAL-1: Transfer OMTHB tokens with gas limit to prevent griefing
-        // Using transferFrom with gas limit and comprehensive error handling
-        bool transferSuccess = false;
-        
-        // Gas limit for token transfer to prevent griefing attacks
-        // Standard ERC20 transfers should not use more than 100k gas
-        uint256 gasLimit = 100000;
-        
-        // Attempt transfer with gas limit
-        try omthbToken.transferFrom{gas: gasLimit}(msg.sender, clone, budget) returns (bool success) {
-            transferSuccess = success;
-        } catch Error(string memory reason) {
-            // Provide detailed error information
-            revert(string(abi.encodePacked("Token transfer failed: ", reason)));
-        } catch (bytes memory lowLevelData) {
-            // Handle low-level errors
-            if (lowLevelData.length > 0) {
-                // Bubble up the revert reason if available
-                assembly {
-                    let returndata_size := mload(lowLevelData)
-                    revert(add(32, lowLevelData), returndata_size)
-                }
-            } else {
-                revert TokenTransferFailed();
-            }
-        }
-        
-        if (!transferSuccess) {
-            revert TokenTransferFailed();
-        }
-        
-        // NEW: Verify the transfer was successful
-        uint256 projectBalance = omthbToken.balanceOf(clone);
-        if (projectBalance < budget) {
-            revert TokenTransferFailed();
-        }
-        
         // Store project info
         projects[projectId] = ProjectInfo({
             projectId: projectId,
@@ -235,7 +186,7 @@ contract ProjectFactory is AccessControl, ReentrancyGuard, Pausable {
         projectsByCreator[msg.sender].push(projectId);
         allProjectIds.push(projectId);
         
-        emit ProjectCreated(projectId, clone, msg.sender, budget);
+        emit ProjectCreated(projectId, clone, msg.sender, 0);
         
         return clone;
     }

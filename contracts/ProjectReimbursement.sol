@@ -29,6 +29,15 @@ contract ProjectReimbursement is
 
     /// @notice Maximum recipients per request for gas efficiency
     uint256 public constant MAX_RECIPIENTS = 10;
+    
+    /// @notice Minimum deposit amount (10 OMTHB)
+    uint256 public constant MIN_DEPOSIT_AMOUNT = 10 * 10**18;
+    
+    /// @notice Maximum percentage of funds that can be locked (80%)
+    uint256 public constant MAX_LOCKED_PERCENTAGE = 80;
+    
+    /// @notice Timeout for stale approved requests (30 days)
+    uint256 public constant STALE_REQUEST_TIMEOUT = 30 days;
 
     /// @notice Reimbursement status enum
     enum Status {
@@ -180,8 +189,13 @@ contract ProjectReimbursement is
     uint256 public constant CRITICAL_OPERATION_THRESHOLD = 2;
     mapping(bytes32 => address[]) public criticalOperationApprovers;
     
+    /// @notice Fund locking tracking
+    uint256 public totalLockedAmount;  // Total amount locked for approved requests
+    mapping(uint256 => uint256) public lockedAmounts;  // requestId => locked amount
+    mapping(uint256 => uint256) public approvalTimestamps;  // requestId => timestamp when approved by director
+    
     /// @notice Storage gap for upgrades
-    uint256[28] private __gap;  // Reduced by 1 due to virtualPayers mapping
+    uint256[25] private __gap;  // Reduced by 4 due to new state variables
 
     /// @notice Events - Enhanced for multi-recipient support
     event RequestCreated(
@@ -220,6 +234,13 @@ contract ProjectReimbursement is
     event RoleCommitted(bytes32 indexed role, address indexed account, address indexed committer, uint256 timestamp);
     event RoleGrantedWithReveal(bytes32 indexed role, address indexed account, address indexed granter);
     event CriticalOperationApproved(bytes32 indexed operationId, address indexed approver, uint256 approverCount);
+    event OMTHBDeposited(address indexed depositor, uint256 amount, uint256 newBalance);
+    event FundsLocked(uint256 indexed requestId, uint256 amount);
+    event FundsUnlocked(uint256 indexed requestId, uint256 amount);
+    event BudgetIncreased(uint256 indexed amount, address indexed depositor);
+    event BudgetDecreased(uint256 indexed amount, address indexed recipient);
+    event AvailableBalanceChanged(uint256 oldBalance, uint256 newBalance);
+    event StaleRequestUnlocked(uint256 indexed requestId, uint256 amount, uint256 daysSinceApproval);
     
     // Emergency closure events
     event EmergencyClosureInitiated(
@@ -283,6 +304,12 @@ contract ProjectReimbursement is
     error InvalidTotalAmount();
     error RequestNotAbandoned();
     error InvalidVirtualPayer(); // SECURITY FIX MEDIUM-1: Added for virtual payer validation
+    error DepositFailed();
+    error NoDepositsRequired();
+    error InsufficientAvailableBalance();
+    error DepositAmountTooLow();
+    error MaxLockedPercentageExceeded();
+    error RequestNotStale();
 
     /// @notice Modifier to check if caller is factory
     modifier onlyFactory() {
@@ -344,6 +371,9 @@ contract ProjectReimbursement is
         emergencyStop = false;
         
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        
+        // Initialize locked amount to 0
+        totalLockedAmount = 0;
     }
 
     /**
@@ -368,8 +398,8 @@ contract ProjectReimbursement is
         // Calculate total amount
         uint256 totalAmount = _calculateTotalAmount(amounts);
         
-        // Validate budget
-        _validateBudget(totalAmount);
+        // Validate budget with available balance (considering locked funds)
+        _validateAvailableBudget(totalAmount);
         
         uint256 requestId = _requestIdCounter++;
         
@@ -417,8 +447,8 @@ contract ProjectReimbursement is
         // Validate inputs
         _validateMultiRequestInputs(recipients, amounts, description, documentHash);
         
-        // Validate budget
-        _validateBudget(amount);
+        // Validate budget with available balance (considering locked funds)
+        _validateAvailableBudget(amount);
         
         uint256 requestId = _requestIdCounter++;
         
@@ -487,6 +517,24 @@ contract ProjectReimbursement is
         if (newTotalDistributed > projectBudget) revert InsufficientBudget();
         if (newTotalDistributed < totalDistributed) revert InvalidAmount(); // Overflow check
         if (projectBudget > type(uint256).max / 2) revert InvalidAmount();
+    }
+    
+    function _validateAvailableBudget(uint256 amount) private view {
+        // Check if we have enough available balance (total balance - locked amount)
+        uint256 currentBalance = omthbToken.balanceOf(address(this));
+        uint256 availableBalance = currentBalance > totalLockedAmount ? currentBalance - totalLockedAmount : 0;
+        
+        if (amount > availableBalance) revert InsufficientAvailableBalance();
+        
+        // Check that new locked amount won't exceed max percentage
+        uint256 newLockedAmount = totalLockedAmount + amount;
+        uint256 maxAllowedLocked = (currentBalance * MAX_LOCKED_PERCENTAGE) / 100;
+        if (newLockedAmount > maxAllowedLocked) revert MaxLockedPercentageExceeded();
+        
+        // Check against project budget (optimized to avoid redundant check)
+        uint256 newTotalDistributed = totalDistributed + amount;
+        if (newTotalDistributed > projectBudget) revert InsufficientBudget();
+        if (newTotalDistributed < totalDistributed) revert InvalidAmount(); // Overflow check
     }
     
     function _createMultiReimbursementRequest(
@@ -768,6 +816,10 @@ contract ProjectReimbursement is
         request.updatedAt = block.timestamp;
         request.paymentDeadline = block.timestamp + PAYMENT_DEADLINE_DURATION;
         
+        // Lock funds for this request and record approval timestamp
+        _lockFunds(requestId, request.totalAmount);
+        approvalTimestamps[requestId] = block.timestamp;
+        
         // Clear the commitment after use
         delete approvalCommitments[requestId][msg.sender];
         delete commitTimestamps[requestId][msg.sender];
@@ -797,6 +849,11 @@ contract ProjectReimbursement is
         
         request.status = Status.Cancelled;
         request.updatedAt = block.timestamp;
+        
+        // Unlock funds if they were locked (director approved but not distributed)
+        if (request.approvalInfo.directorApprover != address(0) && lockedAmounts[requestId] > 0) {
+            _unlockFunds(requestId);
+        }
         
         // Remove from active arrays
         _removeFromActiveRequests(requestId);
@@ -996,6 +1053,67 @@ contract ProjectReimbursement is
     }
     
     /**
+     * @notice Deposit OMTHB tokens to the project
+     * @param amount The amount of OMTHB to deposit
+     * @dev Anyone can deposit tokens to a project
+     */
+    function depositOMTHB(uint256 amount) external nonReentrant whenNotPaused notEmergencyStopped {
+        if (amount == 0) revert InvalidAmount();
+        if (amount < MIN_DEPOSIT_AMOUNT) revert DepositAmountTooLow();
+        
+        // Check depositor has sufficient balance
+        uint256 depositorBalance = omthbToken.balanceOf(msg.sender);
+        if (depositorBalance < amount) revert InsufficientBalance();
+        
+        // Check depositor has approved this contract
+        uint256 allowance = omthbToken.allowance(msg.sender, address(this));
+        if (allowance < amount) revert InsufficientBalance();
+        
+        // Get balance before transfer
+        uint256 balanceBefore = omthbToken.balanceOf(address(this));
+        
+        // Transfer tokens from depositor to this contract
+        bool success = omthbToken.transferFrom(msg.sender, address(this), amount);
+        if (!success) revert DepositFailed();
+        
+        // Update project budget
+        uint256 oldBudget = projectBudget;
+        projectBudget += amount;
+        
+        // Emit enhanced events
+        emit OMTHBDeposited(msg.sender, amount, projectBudget);
+        emit BudgetUpdated(oldBudget, projectBudget);
+        emit BudgetIncreased(amount, msg.sender);
+        emit AvailableBalanceChanged(balanceBefore, omthbToken.balanceOf(address(this)));
+    }
+    
+    /**
+     * @notice Lock funds when director approves a request
+     * @param requestId The request ID
+     * @param amount The amount to lock
+     */
+    function _lockFunds(uint256 requestId, uint256 amount) private {
+        lockedAmounts[requestId] = amount;
+        totalLockedAmount += amount;
+        
+        emit FundsLocked(requestId, amount);
+    }
+    
+    /**
+     * @notice Unlock funds when request is cancelled or distributed
+     * @param requestId The request ID
+     */
+    function _unlockFunds(uint256 requestId) private {
+        uint256 amount = lockedAmounts[requestId];
+        if (amount > 0) {
+            totalLockedAmount -= amount;
+            lockedAmounts[requestId] = 0;
+            
+            emit FundsUnlocked(requestId, amount);
+        }
+    }
+    
+    /**
      * @notice SECURITY FIX MEDIUM-1: Validate virtual payer address
      * @param virtualPayer The virtual payer address to validate
      * @dev Ensures virtual payer is not a critical system address
@@ -1053,6 +1171,9 @@ contract ProjectReimbursement is
         uint256 oldTotal = totalDistributed;
         totalDistributed += totalAmount;
         emit TotalDistributedUpdated(oldTotal, totalDistributed);
+        
+        // Unlock the funds since they're being distributed
+        _unlockFunds(requestId);
         
         // Emit event before external calls
         emit FundsDistributed(requestId, recipients, amounts, totalAmount, request.virtualPayer);
@@ -1741,9 +1862,173 @@ contract ProjectReimbursement is
         request.status = Status.Cancelled;
         request.updatedAt = block.timestamp;
         
+        // Unlock funds if they were locked (director approved but not distributed)
+        if (request.approvalInfo.directorApprover != address(0) && lockedAmounts[requestId] > 0) {
+            _unlockFunds(requestId);
+        }
+        
         // Remove from active arrays
         _removeFromActiveRequests(requestId);
         
         emit RequestCancelled(requestId, msg.sender);
+    }
+    
+    // ============================================
+    // NEW VIEW FUNCTIONS FOR FUND TRACKING
+    // ============================================
+    
+    /**
+     * @notice Get total balance of OMTHB tokens in the project
+     * @return The total OMTHB balance
+     */
+    function getTotalBalance() external view returns (uint256) {
+        return omthbToken.balanceOf(address(this));
+    }
+    
+    /**
+     * @notice Get available balance (total balance minus locked amounts)
+     * @return The available balance for new requests
+     */
+    function getAvailableBalance() external view returns (uint256) {
+        uint256 totalBalance = omthbToken.balanceOf(address(this));
+        if (totalBalance > totalLockedAmount) {
+            return totalBalance - totalLockedAmount;
+        }
+        return 0;
+    }
+    
+    /**
+     * @notice Get total locked amount
+     * @return The total amount locked for approved requests
+     */
+    function getLockedAmount() external view returns (uint256) {
+        return totalLockedAmount;
+    }
+    
+    /**
+     * @notice Get locked amount for a specific request
+     * @param requestId The request ID
+     * @return The locked amount for the request
+     */
+    function getLockedAmountForRequest(uint256 requestId) external view returns (uint256) {
+        return lockedAmounts[requestId];
+    }
+    
+    /**
+     * @notice Check if project needs deposits before creating requests
+     * @return True if project has 0 balance
+     */
+    function needsDeposit() external view returns (bool) {
+        return omthbToken.balanceOf(address(this)) == 0;
+    }
+    
+    /**
+     * @notice Unlock funds from stale approved requests (30+ days since director approval)
+     * @param requestId The request ID to unlock
+     * @dev Can be called by anyone if request is stale
+     */
+    function unlockStaleRequest(uint256 requestId) external whenNotPaused nonReentrant {
+        ReimbursementRequest storage request = requests[requestId];
+        
+        // Request must exist
+        if (request.id != requestId) revert RequestNotFound();
+        
+        // Request must be director approved but not distributed
+        if (request.status != Status.DirectorApproved) revert InvalidStatus();
+        
+        // Check if request is stale (30 days since director approval)
+        uint256 approvalTime = approvalTimestamps[requestId];
+        if (approvalTime == 0) revert InvalidStatus();
+        if (block.timestamp < approvalTime + STALE_REQUEST_TIMEOUT) revert RequestNotStale();
+        
+        // Calculate days since approval for event
+        uint256 daysSinceApproval = (block.timestamp - approvalTime) / 1 days;
+        
+        // Mark as cancelled
+        request.status = Status.Cancelled;
+        request.updatedAt = block.timestamp;
+        
+        // Unlock the funds
+        uint256 unlockedAmount = lockedAmounts[requestId];
+        _unlockFunds(requestId);
+        
+        // Remove from active arrays
+        _removeFromActiveRequests(requestId);
+        
+        // Emit events
+        emit RequestCancelled(requestId, msg.sender);
+        emit StaleRequestUnlocked(requestId, unlockedAmount, daysSinceApproval);
+    }
+    
+    /**
+     * @notice Get all stale request IDs that can be unlocked
+     * @return Array of stale request IDs
+     */
+    function getStaleRequests() external view returns (uint256[] memory) {
+        uint256[] memory tempStaleRequests = new uint256[](activeRequestIds.length);
+        uint256 staleCount = 0;
+        
+        for (uint256 i = 0; i < activeRequestIds.length; i++) {
+            uint256 requestId = activeRequestIds[i];
+            ReimbursementRequest storage request = requests[requestId];
+            
+            if (request.status == Status.DirectorApproved) {
+                uint256 approvalTime = approvalTimestamps[requestId];
+                if (approvalTime > 0 && block.timestamp >= approvalTime + STALE_REQUEST_TIMEOUT) {
+                    tempStaleRequests[staleCount] = requestId;
+                    staleCount++;
+                }
+            }
+        }
+        
+        // Create properly sized array
+        uint256[] memory staleRequests = new uint256[](staleCount);
+        for (uint256 i = 0; i < staleCount; i++) {
+            staleRequests[i] = tempStaleRequests[i];
+        }
+        
+        return staleRequests;
+    }
+    
+    /**
+     * @notice Check if a request is stale (30+ days since director approval)
+     * @param requestId The request ID to check
+     * @return True if the request is stale and can be unlocked
+     */
+    function isRequestStale(uint256 requestId) external view returns (bool) {
+        ReimbursementRequest storage request = requests[requestId];
+        
+        if (request.id != requestId) return false;
+        if (request.status != Status.DirectorApproved) return false;
+        
+        uint256 approvalTime = approvalTimestamps[requestId];
+        if (approvalTime == 0) return false;
+        
+        return block.timestamp >= approvalTime + STALE_REQUEST_TIMEOUT;
+    }
+    
+    /**
+     * @notice Get the maximum amount that can be locked for new requests
+     * @return The maximum amount that can be locked
+     */
+    function getMaxLockableAmount() external view returns (uint256) {
+        uint256 currentBalance = omthbToken.balanceOf(address(this));
+        uint256 maxAllowedLocked = (currentBalance * MAX_LOCKED_PERCENTAGE) / 100;
+        
+        if (maxAllowedLocked > totalLockedAmount) {
+            return maxAllowedLocked - totalLockedAmount;
+        }
+        return 0;
+    }
+    
+    /**
+     * @notice Get the percentage of funds currently locked
+     * @return The percentage of funds locked (0-100)
+     */
+    function getLockedPercentage() external view returns (uint256) {
+        uint256 currentBalance = omthbToken.balanceOf(address(this));
+        if (currentBalance == 0) return 0;
+        
+        return (totalLockedAmount * 100) / currentBalance;
     }
 }

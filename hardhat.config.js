@@ -1,6 +1,10 @@
-require("@nomicfoundation/hardhat-toolbox");
+require("@nomicfoundation/hardhat-chai-matchers");
 require("@openzeppelin/hardhat-upgrades");
 require("dotenv").config();
+
+// Configure upgrades
+const { HardhatUserConfig } = require("hardhat/config");
+const config = HardhatUserConfig;
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -11,7 +15,7 @@ module.exports = {
         settings: {
           optimizer: {
             enabled: true,
-            runs: 1
+            runs: 200
           },
           viaIR: true,
           evmVersion: "paris"
@@ -22,7 +26,7 @@ module.exports = {
         settings: {
           optimizer: {
             enabled: true,
-            runs: 1
+            runs: 200
           },
           viaIR: true,
           evmVersion: "paris"
@@ -34,14 +38,15 @@ module.exports = {
     hardhat: {
       chainId: 1337,
       accounts: {
-        count: 20, // We need at least 19 accounts for the simulation
+        count: 30, // We need at least 25 accounts for comprehensive QA tests
         accountsBalance: "10000000000000000000000" // 10,000 ETH per account
-      }
+      },
+      allowUnlimitedContractSize: true // Allow large contracts for testing
     },
     omchain: {
       url: "https://rpc.omplatform.com",
       chainId: 1246,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
       gasPrice: "auto",
       gas: "auto"
     },
