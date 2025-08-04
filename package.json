@@ -1,0 +1,58 @@
+{
+  "name": "omchain-reimbursement",
+  "version": "1.0.0",
+  "description": "Smart contract system for reimbursement platform on OMChain",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:gasless": "node scripts/run-gasless-tests.js",
+    "test:gasless:main": "hardhat test test/ComprehensiveGaslessReimbursement.test.js",
+    "test:gasless:security": "hardhat test test/GaslessSecurityEdgeCases.test.js",
+    "deploy": "hardhat run scripts/deploy.js --network omchain",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:omchain": "hardhat run scripts/deploy-omchain-multirecipient.js --network omchain",
+    "verify": "hardhat verify --network omchain",
+    "verify:omchain": "hardhat run scripts/verify-omchain-contracts.js --network omchain",
+    "verify:simple": "hardhat run scripts/simple-verify.js --network omchain",
+    "verify:retry": "hardhat run scripts/verify-with-retry.js --network omchain",
+    "verify:specific": "hardhat run scripts/verify-specific-contracts.js --network omchain",
+    "verify:prepare": "hardhat run scripts/prepare-manual-verification.js --network omchain",
+    "verify:check-libs": "hardhat run scripts/check-library-deployment.js --network omchain",
+    "test:omchain": "hardhat run scripts/test-omchain-deployment.js --network omchain",
+    "clean": "hardhat clean",
+    "node": "hardhat node",
+    "console": "hardhat console",
+    "coverage": "hardhat coverage",
+    "gas-report": "REPORT_GAS=true hardhat test",
+    "simulation:deploy": "hardhat run scripts/deploy-simulation.js --network localhost",
+    "simulation:run": "hardhat run scripts/run-simulation.js --network localhost",
+    "simulation": "npm run simulation:deploy && npm run simulation:run"
+  },
+  "keywords": [
+    "blockchain",
+    "smart-contracts",
+    "reimbursement",
+    "omchain"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.1.0",
+    "@openzeppelin/hardhat-upgrades": "^2.5.0",
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "chai": "^4.5.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.19.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.0.0"
+  }
+}

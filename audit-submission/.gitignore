@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+# Testing
+coverage/
+coverage.json
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Deployment
+deployments/localhost/
+deployments/hardhat/
+
+.claude

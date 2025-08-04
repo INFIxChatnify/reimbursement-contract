@@ -1,0 +1,26 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "deployedAt": "2025-07-27T17:36:57.359Z",
+  "state": {
+    "contracts": {
+      "OMTHBToken": {
+        "proxy": "0xb69c9a0998AC337fd7101D5eE710176030b186b1",
+        "implementation": "0xc72A6698fD9AD11807BaA2976195fF3B36C6FEe0"
+      },
+      "MetaTxForwarder": "0x66aC00B6bE5F7992B86862405740266a49deca44",
+      "ProjectReimbursementImplementation": "0xC6D7180063aC172A4Ea9ce4E487c5927A864cFD2",
+      "ProjectFactory": "0xeF26c2c6E107f04c8137d1ee67177fA058a12C7F",
+      "AuditAnchor": "0xAccacC43fC63C8be8B3408F9f4071fdA1D627199"
+    },
+    "errors": [],
+    "completed": [
+      "OMTHBToken",
+      "MetaTxForwarder",
+      "ProjectReimbursementImplementation",
+      "ProjectFactory",
+      "AuditAnchor"
+    ]
+  },
+  "status": "complete"
+}

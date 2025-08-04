@@ -1,0 +1,20 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "timestamp": "2025-07-31T10:04:58.110Z",
+  "addresses": {
+    "omthbToken": "0x05db2AE2eAb7A47395DB8cDbf5f3E84A78989091",
+    "omthbTokenImplementation": "0xC051053E9C6Cb7BccEc4F22F801B5106EA476D6d",
+    "gasTank": "0xA01b775F6ebA700e29bD1579abE4f1DC53bA6f8d",
+    "metaTxForwarder": "0x36e030Be3955aCF97AA725bE99A0D7Fc64238292",
+    "projectReimbursementImplementation": "0x2E363b97d9da9cA243BcC782d7DdffC18E6F54cC",
+    "projectFactory": "0x6495152B17f9d7418e64ef1277935EE70d73Aeed"
+  },
+  "contractVersions": {
+    "omthbToken": "1.0.0",
+    "gasTank": "1.0.0",
+    "metaTxForwarder": "1.0.0",
+    "projectFactory": "1.0.0",
+    "projectReimbursement": "1.0.0"
+  }
+}
