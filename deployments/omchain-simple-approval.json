@@ -1,0 +1,28 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "timestamp": "2025-08-05T17:33:32.412Z",
+  "deployer": "0x4e2bAD765362a397366d4630A02B5bed7692BE3a",
+  "contracts": {
+    "mockOMTHB": "0xbfC8F1E1f450a95AAC41e76015aD90E95A0D6162",
+    "gasTank": "0x5eE4DFE9b20e692FF7c76E77dCd982dd4667D78a",
+    "metaTxForwarder": "0x47cf8b462979bFBC6F3717db1F6E5aa65984d88F",
+    "testProject": "0x137Fc71De580F518539bb28CA3761865188198E2"
+  },
+  "testProject": {
+    "address": "0x137Fc71De580F518539bb28CA3761865188198E2",
+    "id": "OMCHAIN-TEST-001",
+    "budget": "50000.0",
+    "roles": {
+      "secretary": "0x8f20a41832e93d81d4443612Df582f0F1007a87f",
+      "committee": "0x19E2C7Fb7C3906182f6725AC7a46f3578AAEa83a",
+      "finance": "0x040921cae1D7Fc1bCB448062448a5D02fa10Da84",
+      "director": "0x27Cf26C8fc3B0DE2A51d334e7D1c3d592ef7a6C8"
+    },
+    "recipients": [
+      "0xa9D4F5DA7c8CBE35410d695feBF72466ea6ed0F0",
+      "0xe1d2A94eF2434D61EB05F4EB5001E1B3e7262eBD",
+      "0x516aB86dB20178b8B9b35e36afC66556ee1668b3"
+    ]
+  }
+}

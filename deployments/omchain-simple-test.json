@@ -1,0 +1,13 @@
+{
+  "network": "omchain",
+  "chainId": 1246,
+  "timestamp": "2025-08-05T17:22:44.980Z",
+  "deployer": "0x4e2bAD765362a397366d4630A02B5bed7692BE3a",
+  "contracts": {
+    "omthbToken": "0xbfC8F1E1f450a95AAC41e76015aD90E95A0D6162",
+    "gasTank": "0x5eE4DFE9b20e692FF7c76E77dCd982dd4667D78a",
+    "metaTxForwarder": "0x47cf8b462979bFBC6F3717db1F6E5aa65984d88F"
+  },
+  "status": "partial",
+  "notes": "Simple deployment for testing OMChain connectivity"
+}
