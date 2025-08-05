@@ -566,9 +566,6 @@ contract ProjectReimbursementOptimized is
         if (request.status != Status.FinanceApproved) revert InvalidStatus();
         if (request.approvalInfo.committeeAdditionalApprovers.length >= REQUIRED_COMMITTEE_ADDITIONAL_APPROVERS) revert AlreadyApproved();
         
-        // Ensure different committee member from Level 2 approver
-        if (request.approvalInfo.committeeApprover == msg.sender) revert UnauthorizedApprover();
-        
         // Check if this committee member has already approved in additional level
         for (uint256 i = 0; i < request.approvalInfo.committeeAdditionalApprovers.length; i++) {
             if (request.approvalInfo.committeeAdditionalApprovers[i] == msg.sender) revert AlreadyApproved();

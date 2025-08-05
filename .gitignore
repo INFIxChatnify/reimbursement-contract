@@ -69,3 +69,6 @@ forge-cache/
 # Log files
 *.log
 hardhat-node.log
+
+# Test reports
+test-reports/
