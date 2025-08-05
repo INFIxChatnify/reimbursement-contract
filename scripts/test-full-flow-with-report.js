@@ -178,7 +178,7 @@ async function deployContracts() {
         
         // Deploy Factory
         logInfo("Deploying ProjectFactory...");
-        const ProjectFactory = await ethers.getContractFactory("ProjectFactory");
+        const ProjectFactory = await ethers.getContractFactory("ProjectFactoryV3");
         const factory = await ProjectFactory.deploy(
             implementationAddress,
             omthbAddress,
@@ -189,9 +189,9 @@ async function deployContracts() {
         const factoryAddress = await factory.getAddress();
         logSuccess(`ProjectFactory deployed at: ${factoryAddress}`);
         
-        // Grant PROJECT_CREATOR_ROLE
-        const PROJECT_CREATOR_ROLE = await factory.PROJECT_CREATOR_ROLE();
-        await factory.connect(admin).grantRole(PROJECT_CREATOR_ROLE, admin.address);
+        // Grant CREATOR_ROLE
+        const CREATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROJECT_CREATOR_ROLE"));
+        await factory.connect(admin).grantRole(CREATOR_ROLE, admin.address);
         
         // Mint tokens for testing
         const mintAmount = ethers.parseEther("2000000"); // 2M OMTHB
@@ -271,7 +271,7 @@ async function testProjectCreationWithZeroBudget(deployment) {
             }
         });
         
-        const projectAddress = projectCreatedEvent.args.projectContract;
+        const projectAddress = projectCreatedEvent.args.contractAddr;
         const project = await ethers.getContractAt("contracts/ProjectReimbursementOptimized.sol:ProjectReimbursementOptimized", projectAddress);
         
         // Verify project details

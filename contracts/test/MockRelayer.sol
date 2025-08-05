@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../MetaTxForwarder.sol";
+import "../MetaTxForwarderV2.sol";
 import "../GasTank.sol";
 
 /**
@@ -9,7 +9,7 @@ import "../GasTank.sol";
  * @notice Mock relayer contract for testing gasless transactions
  */
 contract MockRelayer {
-    MetaTxForwarder public immutable forwarder;
+    MetaTxForwarderV2 public immutable forwarder;
     GasTank public immutable gasTank;
     
     struct RelayerStats {
@@ -30,7 +30,7 @@ contract MockRelayer {
     );
     
     constructor(address _forwarder, address payable _gasTank) {
-        forwarder = MetaTxForwarder(_forwarder);
+        forwarder = MetaTxForwarderV2(_forwarder);
         gasTank = GasTank(_gasTank);
     }
     
@@ -42,7 +42,7 @@ contract MockRelayer {
      * @return returnData The return data
      */
     function submitTransaction(
-        MetaTxForwarder.ForwardRequest calldata req,
+        MetaTxForwarderV2.ForwardRequest calldata req,
         bytes calldata signature
     ) external returns (bool success, bytes memory returnData) {
         uint256 gasStart = gasleft();
@@ -84,7 +84,7 @@ contract MockRelayer {
      * @return returnDatas Array of return data
      */
     function submitBatchTransactions(
-        MetaTxForwarder.ForwardRequest[] calldata reqs,
+        MetaTxForwarderV2.ForwardRequest[] calldata reqs,
         bytes[] calldata signatures
     ) external returns (bool[] memory successes, bytes[] memory returnDatas) {
         require(reqs.length == signatures.length, "MockRelayer: mismatched arrays");
