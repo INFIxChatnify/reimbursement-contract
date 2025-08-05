@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-08-05T18:19:30.286Z",
+  "network": "omchain",
+  "chainId": 1246,
+  "contracts": {
+    "mockOMTHB": "0xbfC8F1E1f450a95AAC41e76015aD90E95A0D6162",
+    "gasTank": "0x5eE4DFE9b20e692FF7c76E77dCd982dd4667D78a",
+    "metaTxForwarder": "0x68c02b6259d6B4c33E3254F9BED07ac2e62b5cc7",
+    "gaslessProject": "0xd51CB8D7CC7D90b4aa562474cF8Dc1b22802cFEC"
+  },
+  "results": {
+    "deployment": {
+      "success": true,
+      "projectAddress": "0xd51CB8D7CC7D90b4aa562474cF8Dc1b22802cFEC"
+    },
+    "configuration": {
+      "success": true,
+      "projectId": "GASLESS-FULL-TEST-1754417949479"
+    },
+    "gaslessApproval": {
+      "success": true,
+      "requestId": 0
+    },
+    "distribution": {
+      "success": true,
+      "txHash": "0xf4d9586dcbb517d82d881f7723ccb24997de9a2cf8564632aacd75c55e83c31a",
+      "totalAmount": "9000.0"
+    }
+  },
+  "gaslessVerified": true,
+  "projectId": "GASLESS-FULL-TEST-1754417949479",
+  "distributionTx": "0xf4d9586dcbb517d82d881f7723ccb24997de9a2cf8564632aacd75c55e83c31a"
+}
