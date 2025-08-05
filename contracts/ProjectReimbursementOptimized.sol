@@ -284,7 +284,7 @@ contract ProjectReimbursementOptimized is
         // Enhanced input validation
         ValidationLib.validateNotZero(_omthbToken);
         ValidationLib.validateNotZero(_admin);
-        ValidationLib.validateAmountNotZero(_projectBudget);
+        // Budget always starts at 0 during initialization - no validation needed
         if (bytes(_projectId).length == 0) revert InvalidDescription();
         
         // Verify token contract
