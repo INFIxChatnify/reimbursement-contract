@@ -146,6 +146,9 @@ contract ProjectReimbursementOptimized is
     /// @notice Timelock controller for admin functions
     address public timelockController;
     
+    /// @notice Current admin address for tracking admin transfers
+    address public currentAdmin;
+    
     /// @notice Minimum and maximum reimbursement amounts
     uint256 public constant MIN_REIMBURSEMENT_AMOUNT = 100 * 10**18; // 100 OMTHB
     uint256 public constant MAX_REIMBURSEMENT_AMOUNT = 1000000 * 10**18; // 1M OMTHB
@@ -165,7 +168,7 @@ contract ProjectReimbursementOptimized is
     mapping(bytes32 => address[]) public criticalOperationApprovers;
     
     /// @notice Storage gap for upgrades
-    uint256[28] private __gap;  // Reduced by 1 due to virtualPayers mapping
+    uint256[27] private __gap;  // Reduced by 2: virtualPayers mapping and currentAdmin
 
     /// @notice Events - Enhanced for multi-recipient support
     event RequestCreated(
@@ -308,6 +311,7 @@ contract ProjectReimbursementOptimized is
         emergencyStop = false;
         
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        currentAdmin = _admin;
     }
 
     /**
@@ -984,11 +988,13 @@ contract ProjectReimbursementOptimized is
         if (block.timestamp < pendingAdminTimestamp + TIMELOCK_DURATION) revert TimelockNotExpired();
         
         // Store previous admin before granting new role
-        // In a production scenario, track current admin separately
-        address previousAdmin = address(0);
+        address previousAdmin = currentAdmin;
         
         // Grant admin role to new admin
         _grantRole(DEFAULT_ADMIN_ROLE, pendingAdmin);
+        
+        // Update current admin
+        currentAdmin = pendingAdmin;
         
         // Note: The previous admin should manually revoke their role
         // This is safer than automatic revocation
