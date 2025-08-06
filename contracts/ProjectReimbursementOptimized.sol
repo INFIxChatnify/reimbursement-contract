@@ -1118,13 +1118,13 @@ contract ProjectReimbursementOptimized is
     
     /**
      * @notice Direct role grant for initial setup only
-     * @dev Only callable by factory during initialization or admin for emergency
+     * @dev Only callable by factory during initialization
      * @param role The role to grant
      * @param account The account to grant the role to
      */
     function grantRoleDirect(bytes32 role, address account) external {
-        // CRITICAL FIX: Allow factory to set initial roles
-        if (msg.sender != projectFactory && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+        // CRITICAL FIX: Allow factory to set initial roles ONLY
+        if (msg.sender != projectFactory) {
             revert UnauthorizedApprover();
         }
         ValidationLib.validateNotZero(account);
