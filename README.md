@@ -198,6 +198,7 @@ The system has undergone multiple comprehensive security audits achieving a perf
 - **Access Control**: Multi-role system with granular permissions
 - **DoS Prevention**: Gas limits, array size restrictions, pull payment pattern
 - **Front-running Protection**: Commit-reveal pattern for sensitive operations
+- **Admin Transfer Protection**: 2-day timelock on admin transfers with no bypass mechanism
 
 #### Emergency Response
 The emergency closure system provides a secure way to halt operations and return funds:
@@ -214,8 +215,15 @@ approveEmergencyClosure(uint256 nonce)
 - ✅ **Multi-recipient Audit**: Enhanced for multiple payees
 - ✅ **Gas Optimization Audit**: Reduced costs by 40%
 - ✅ **Final Deployment Audit**: Production readiness verification
+- ✅ **Security Fix (Aug 6, 2025)**: Fixed admin transfer bypass vulnerability in `grantRoleDirect`
 
 View full audit reports in [docs/security/](docs/security/)
+
+#### Recent Security Updates
+- **August 6, 2025**: Fixed critical vulnerability where `grantRoleDirect` could bypass the 2-day admin transfer timelock
+  - Function now restricted to factory-only access
+  - Ensures all admin transfers follow proper timelock mechanism
+  - Commit: `9d528be`
 
 ## Documentation
 
