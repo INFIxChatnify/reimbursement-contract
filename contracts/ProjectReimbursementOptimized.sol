@@ -170,8 +170,11 @@ contract ProjectReimbursementOptimized is
     /// @notice Time window for critical operations (5 minutes)
     uint256 public constant CRITICAL_OPERATION_TIME_WINDOW = 5 minutes;
     
+    /// @notice Admin initialization flag
+    bool public adminInitialized;
+    
     /// @notice Storage gap for upgrades
-    uint256[27] private __gap;  // Reduced by 2: virtualPayers mapping and currentAdmin
+    uint256[26] private __gap;  // Reduced by 3: virtualPayers mapping, currentAdmin, and adminInitialized
 
     /// @notice Events - Enhanced for multi-recipient support
     event RequestCreated(
@@ -253,6 +256,9 @@ contract ProjectReimbursementOptimized is
     error InvalidTotalAmount();
     error RequestNotAbandoned();
     error InvalidVirtualPayer();
+    error AdminAlreadyInitialized();
+    error MultipleAdminsNotAllowed();
+    error AdminRoleCannotBeGrantedAfterInit();
 
     /// @notice Modifier to check if caller is factory
     modifier onlyFactory() {
@@ -975,6 +981,11 @@ contract ProjectReimbursementOptimized is
      * @param newAdmin The address of the new admin
      */
     function initiateAdminTransfer(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        // NEW: Ensure only one admin exists
+        if (getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 1) {
+            revert("Multiple admins not allowed");
+        }
+        
         ValidationLib.validateNotZero(newAdmin);
         
         pendingAdmin = newAdmin;
@@ -992,17 +1003,14 @@ contract ProjectReimbursementOptimized is
         if (pendingAdminTimestamp == 0) revert TransferNotInitiated();
         if (block.timestamp < pendingAdminTimestamp + TIMELOCK_DURATION) revert TimelockNotExpired();
         
-        // Store previous admin before granting new role
-        address previousAdmin = currentAdmin;
+        // NEW: Get the current admin (should be only one)
+        address previousAdmin = getRoleMember(DEFAULT_ADMIN_ROLE, 0);
         
-        // Grant admin role to new admin
+        // Transfer admin role atomically
+        _revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
         _grantRole(DEFAULT_ADMIN_ROLE, pendingAdmin);
         
-        // Update current admin
         currentAdmin = pendingAdmin;
-        
-        // Note: The previous admin should manually revoke their role
-        // This is safer than automatic revocation
         
         emit AdminTransferCompleted(previousAdmin, pendingAdmin);
         
@@ -1136,6 +1144,11 @@ contract ProjectReimbursementOptimized is
     function grantRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
         ValidationLib.validateNotZero(account);
         
+        // NEW: Prevent admin role from being granted after initialization
+        if (role == DEFAULT_ADMIN_ROLE) {
+            revert("Admin role cannot be granted after initialization");
+        }
+        
         // Verify commitment
         bytes32 commitment = roleCommitments[role][msg.sender];
         if (commitment == bytes32(0)) revert InvalidRoleCommitment();
@@ -1168,8 +1181,16 @@ contract ProjectReimbursementOptimized is
         if (msg.sender != projectFactory) {
             revert UnauthorizedApprover();
         }
-        ValidationLib.validateNotZero(account);
         
+        // NEW: Prevent admin role from being granted more than once
+        if (role == DEFAULT_ADMIN_ROLE) {
+            if (adminInitialized) {
+                revert("Admin already initialized");
+            }
+            adminInitialized = true;
+        }
+        
+        ValidationLib.validateNotZero(account);
         _grantRole(role, account);
     }
     
