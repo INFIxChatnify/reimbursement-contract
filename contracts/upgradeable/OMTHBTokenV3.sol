@@ -37,6 +37,7 @@ contract OMTHBTokenV3 is
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant BLACKLISTER_ROLE = keccak256("BLACKLISTER_ROLE");
+    bytes32 public constant WHITELISTER_ROLE = keccak256("WHITELISTER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
     bytes32 public constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
@@ -48,6 +49,15 @@ contract OMTHBTokenV3 is
 
     /// @notice Blacklisted addresses
     mapping(address => bool) private _blacklisted;
+
+    /// @notice Whitelisted addresses
+    mapping(address => bool) private _whitelisted;
+    
+    /// @notice Whitelist mode enabled flag
+    bool private _whitelistEnabled;
+    
+    /// @notice Track whitelist status with timestamp
+    mapping(address => uint256) private _whitelistTimestamp;
 
     /// @notice Minter information
     mapping(address => MinterInfo) private _minterInfo;
@@ -72,8 +82,8 @@ contract OMTHBTokenV3 is
     /// @notice Action counter for unique IDs
     uint256 private _actionCounter;
 
-    /// @notice Storage gap for future upgrades (reduced from 49 to accommodate new variables)
-    uint256[35] private __gap;
+    /// @notice Storage gap for future upgrades (reduced to accommodate new variables)
+    uint256[32] private __gap;
 
     /// @notice Modifiers
     modifier onlyGuardian() {
@@ -121,6 +131,21 @@ contract OMTHBTokenV3 is
         // Set up role admin relationships
         _setRoleAdmin(GUARDIAN_ROLE, DEFAULT_ADMIN_ROLE);
         _setRoleAdmin(TIMELOCK_ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
+    }
+
+    /**
+     * @notice Initialize whitelist feature V4
+     * @dev This function should be called when upgrading to add whitelist functionality
+     * @param enableWhitelist Whether to enable whitelist mode initially
+     * @custom:oz-upgrades-validate-as-initializer
+     */
+    function initializeWhitelist(bool enableWhitelist) public reinitializer(4) {
+        _whitelistEnabled = enableWhitelist;
+        
+        // Set up role admin for whitelister
+        _setRoleAdmin(WHITELISTER_ROLE, DEFAULT_ADMIN_ROLE);
+        
+        emit WhitelistEnabledUpdated(enableWhitelist);
     }
 
     // ========== MINTING FUNCTIONS ==========
@@ -669,8 +694,86 @@ contract OMTHBTokenV3 is
         return _blacklisted[account];
     }
 
+    // ========== WHITELIST FUNCTIONS ==========
+
     /**
-     * @notice Override _update to add blacklist check
+     * @notice Add an address to the whitelist
+     * @param account The address to whitelist
+     */
+    function whitelist(address account) public onlyRole(WHITELISTER_ROLE) {
+        if (account == address(0)) revert InvalidAddress();
+        
+        _whitelisted[account] = true;
+        _whitelistTimestamp[account] = block.timestamp;
+        emit Whitelisted(account);
+    }
+
+    /**
+     * @notice Remove an address from the whitelist
+     * @param account The address to remove from whitelist
+     */
+    function removeFromWhitelist(address account) public onlyRole(WHITELISTER_ROLE) {
+        if (account == address(0)) revert InvalidAddress();
+        
+        _whitelisted[account] = false;
+        delete _whitelistTimestamp[account];
+        emit RemovedFromWhitelist(account);
+    }
+
+    /**
+     * @notice Batch whitelist multiple addresses
+     * @param accounts Array of addresses to whitelist
+     */
+    function batchWhitelist(address[] calldata accounts) public onlyRole(WHITELISTER_ROLE) {
+        uint256 length = accounts.length;
+        for (uint256 i = 0; i < length; ) {
+            address account = accounts[i];
+            if (account != address(0)) {
+                _whitelisted[account] = true;
+                _whitelistTimestamp[account] = block.timestamp;
+            }
+            unchecked { ++i; }
+        }
+        emit BatchWhitelisted(accounts);
+    }
+
+    /**
+     * @notice Check if an address is whitelisted
+     * @param account The address to check
+     * @return bool True if the address is whitelisted
+     */
+    function isWhitelisted(address account) public view returns (bool) {
+        return _whitelisted[account];
+    }
+
+    /**
+     * @notice Get whitelist timestamp for an address
+     * @param account The address to check
+     * @return timestamp When the address was whitelisted (0 if not whitelisted)
+     */
+    function getWhitelistTimestamp(address account) public view returns (uint256) {
+        return _whitelistTimestamp[account];
+    }
+
+    /**
+     * @notice Enable or disable whitelist mode
+     * @param enabled Whether to enable whitelist mode
+     */
+    function setWhitelistEnabled(bool enabled) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _whitelistEnabled = enabled;
+        emit WhitelistEnabledUpdated(enabled);
+    }
+
+    /**
+     * @notice Check if whitelist mode is enabled
+     * @return bool True if whitelist mode is enabled
+     */
+    function isWhitelistEnabled() public view returns (bool) {
+        return _whitelistEnabled;
+    }
+
+    /**
+     * @notice Override _update to add blacklist and whitelist checks
      * @dev Called by all transfer functions
      */
     function _update(
@@ -678,8 +781,26 @@ contract OMTHBTokenV3 is
         address to,
         uint256 value
     ) internal override(ERC20Upgradeable, ERC20PausableUpgradeable) {
+        // Check blacklist
         if (_blacklisted[from]) revert AccountBlacklisted(from);
         if (_blacklisted[to]) revert AccountBlacklisted(to);
+        
+        // Check whitelist if enabled
+        if (_whitelistEnabled) {
+            // Minting: Only check 'to' address
+            if (from == address(0)) {
+                if (!_whitelisted[to]) revert AccountNotWhitelisted(to);
+            }
+            // Burning: Only check 'from' address
+            else if (to == address(0)) {
+                if (!_whitelisted[from]) revert AccountNotWhitelisted(from);
+            }
+            // Regular transfer: Check both addresses
+            else {
+                if (!_whitelisted[from]) revert AccountNotWhitelisted(from);
+                if (!_whitelisted[to]) revert AccountNotWhitelisted(to);
+            }
+        }
         
         super._update(from, to, value);
     }

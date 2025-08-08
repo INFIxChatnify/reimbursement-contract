@@ -52,6 +52,10 @@ interface IOMTHBTokenV3 {
     event Minted(address indexed to, uint256 amount);
     event Blacklisted(address indexed account);
     event UnBlacklisted(address indexed account);
+    event Whitelisted(address indexed account);
+    event RemovedFromWhitelist(address indexed account);
+    event WhitelistEnabledUpdated(bool enabled);
+    event BatchWhitelisted(address[] accounts);
 
     /// @notice Custom errors
     error TimelockNotReady(bytes32 actionId, uint256 readyTime);
@@ -71,6 +75,8 @@ interface IOMTHBTokenV3 {
     error InvalidAddress();
     error InvalidAmount();
     error AccountBlacklisted(address account);
+    error AccountNotWhitelisted(address account);
+    error WhitelistNotEnabled();
 
     /// @notice Guardian functions
     function addGuardian(address guardian) external;
@@ -110,4 +116,18 @@ interface IOMTHBTokenV3 {
     function getTimelockDelay() external view returns (uint256);
     function getSuspiciousAmountThreshold() external view returns (uint256);
     function setSuspiciousAmountThreshold(uint256 threshold) external;
+
+    /// @notice Whitelist functions
+    function whitelist(address account) external;
+    function removeFromWhitelist(address account) external;
+    function batchWhitelist(address[] calldata accounts) external;
+    function isWhitelisted(address account) external view returns (bool);
+    function getWhitelistTimestamp(address account) external view returns (uint256);
+    function setWhitelistEnabled(bool enabled) external;
+    function isWhitelistEnabled() external view returns (bool);
+    
+    /// @notice Blacklist functions  
+    function blacklist(address account) external;
+    function unBlacklist(address account) external;
+    function isBlacklisted(address account) external view returns (bool);
 }
