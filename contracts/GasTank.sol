@@ -85,6 +85,7 @@ contract GasTank is AccessControl, ReentrancyGuard, Pausable {
     error InvalidGasUsage();
     error RefundFailed();
     error CreditNotActive();
+    error CannotRemoveLastAdmin();
     
     constructor(address _admin, address _emergencyWithdrawAddress) {
         if (_admin == address(0) || _emergencyWithdrawAddress == address(0)) {
@@ -94,6 +95,30 @@ contract GasTank is AccessControl, ReentrancyGuard, Pausable {
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(OPERATOR_ROLE, _admin);
         emergencyWithdrawAddress = _emergencyWithdrawAddress;
+    }
+    
+    /**
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
+     */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.renounceRole(role, account);
     }
     
     /**

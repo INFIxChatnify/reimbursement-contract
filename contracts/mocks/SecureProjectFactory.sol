@@ -1,255 +1,220 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "./SimpleProjectReimbursement.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
+import "./SecureProjectReimbursement.sol";
+import "../interfaces/IOMTHB.sol";
 
 /**
  * @title SecureProjectFactory
- * @notice Secure factory with access control and limits
+ * @notice Factory for deploying secure project reimbursement contracts
+ * @dev Uses clones for gas-efficient deployment with pausable functionality
  */
 contract SecureProjectFactory is AccessControl, Pausable {
     using Clones for address;
-
+    
     // Roles
     bytes32 public constant PROJECT_CREATOR_ROLE = keccak256("PROJECT_CREATOR_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     
-    /// @notice The implementation contract address
+    // Implementation contract
     address public immutable implementation;
     
-    /// @notice OMTHB token address
-    address public immutable omthbToken;
+    // OMTHB token
+    IOMTHB public immutable omthbToken;
     
-    /// @notice MetaTxForwarder address for gasless support
-    address public immutable metaTxForwarder;
-    
-    /// @notice Maximum number of projects allowed
-    uint256 public constant MAX_PROJECTS = 1000;
-    
-    /// @notice Mapping of project ID to project address
+    // Project tracking
     mapping(string => address) public projects;
+    string[] public projectIds;
     
-    /// @notice Array of all project addresses
-    address[] public projectList;
+    // Project metadata
+    struct ProjectInfo {
+        address projectAddress;
+        address admin;
+        uint256 budget;
+        uint256 createdAt;
+        bool isActive;
+    }
     
-    /// @notice Rate limiting: user => timestamp
-    mapping(address => uint256) public lastProjectCreation;
+    mapping(string => ProjectInfo) public projectInfo;
     
-    /// @notice Minimum time between project creations per user (1 hour)
-    uint256 public constant CREATION_COOLDOWN = 1 hours;
-    
-    /// @notice Events
+    // Events
     event ProjectCreated(
-        string indexed projectId,
-        address indexed projectAddress,
-        address indexed creator,
+        string indexed projectId, 
+        address indexed projectAddress, 
+        address indexed admin,
         uint256 budget
     );
+    event ProjectDeactivated(string indexed projectId, address indexed operator);
+    event ProjectReactivated(string indexed projectId, address indexed operator);
     
-    event MaxProjectsUpdated(uint256 newMax);
-    event CooldownUpdated(uint256 newCooldown);
+    // Custom errors
+    error ProjectExists();
+    error ProjectNotFound();
+    error InvalidProjectId();
+    error InvalidBudget();
+    error InvalidAddress();
+    error ProjectNotActive();
+    error ProjectAlreadyActive();
+    error CannotRemoveLastAdmin();
     
-    /**
-     * @notice Constructor
-     * @param _implementation The implementation contract address
-     * @param _omthbToken The OMTHB token address
-     * @param _metaTxForwarder The MetaTxForwarder address
-     */
-    constructor(
-        address _implementation,
-        address _omthbToken,
-        address _metaTxForwarder
-    ) {
-        require(_implementation != address(0), "Invalid implementation");
-        require(_implementation.code.length > 0, "Implementation not a contract");
-        require(_omthbToken != address(0), "Invalid token");
-        require(_omthbToken.code.length > 0, "Token not a contract");
+    constructor(address _omthbToken, address _admin) {
+        if (_omthbToken == address(0) || _admin == address(0)) {
+            revert InvalidAddress();
+        }
         
-        implementation = _implementation;
-        omthbToken = _omthbToken;
-        metaTxForwarder = _metaTxForwarder;
+        omthbToken = IOMTHB(_omthbToken);
+        implementation = address(new SecureProjectReimbursement());
         
-        // Setup roles
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(PROJECT_CREATOR_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(PROJECT_CREATOR_ROLE, _admin);
+        _grantRole(OPERATOR_ROLE, _admin);
     }
     
     /**
-     * @notice Create a new project with access control
-     * @param projectId The unique project identifier
-     * @param budget The project budget
-     * @param admin The project admin address
-     * @return projectAddress The deployed project address
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
      */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.renounceRole(role, account);
+    }
+    
     function createProject(
-        string memory projectId,
-        uint256 budget,
-        address admin
-    ) external onlyRole(PROJECT_CREATOR_ROLE) whenNotPaused returns (address projectAddress) {
-        // Input validation
-        require(bytes(projectId).length > 0 && bytes(projectId).length <= 100, "Invalid project ID");
-        require(projects[projectId] == address(0), "Project already exists");
-        require(admin != address(0), "Invalid admin");
-        require(budget > 0, "Invalid budget");
+        string calldata projectId,
+        uint256 projectBudget,
+        address projectAdmin
+    ) external onlyRole(PROJECT_CREATOR_ROLE) whenNotPaused returns (address) {
+        if (bytes(projectId).length == 0) revert InvalidProjectId();
+        if (projects[projectId] != address(0)) revert ProjectExists();
+        if (projectBudget == 0) revert InvalidBudget();
+        if (projectAdmin == address(0)) revert InvalidAddress();
         
-        // Check project limit
-        require(projectList.length < MAX_PROJECTS, "Max projects reached");
+        // Deploy clone
+        address clone = implementation.clone();
         
-        // Rate limiting
-        require(
-            block.timestamp >= lastProjectCreation[msg.sender] + CREATION_COOLDOWN,
-            "Creation cooldown active"
-        );
-        lastProjectCreation[msg.sender] = block.timestamp;
-        
-        // Deploy minimal proxy
-        projectAddress = implementation.clone();
-        
-        // Initialize the project
-        SimpleProjectReimbursement(projectAddress).initialize(
+        // Initialize
+        SecureProjectReimbursement(clone).initialize(
             projectId,
-            budget,
-            omthbToken,
-            admin
+            address(omthbToken),
+            projectBudget,
+            projectAdmin
         );
+        
+        // Track project
+        projects[projectId] = clone;
+        projectIds.push(projectId);
         
         // Store project info
-        projects[projectId] = projectAddress;
-        projectList.push(projectAddress);
+        projectInfo[projectId] = ProjectInfo({
+            projectAddress: clone,
+            admin: projectAdmin,
+            budget: projectBudget,
+            createdAt: block.timestamp,
+            isActive: true
+        });
         
-        // Emit event
-        emit ProjectCreated(projectId, projectAddress, msg.sender, budget);
-        
-        return projectAddress;
-    }
-    
-    /**
-     * @notice Batch create projects (admin only)
-     * @param projectIds Array of project IDs
-     * @param budgets Array of budgets
-     * @param admins Array of admin addresses
-     */
-    function batchCreateProjects(
-        string[] memory projectIds,
-        uint256[] memory budgets,
-        address[] memory admins
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
-        require(projectIds.length == budgets.length, "Length mismatch");
-        require(projectIds.length == admins.length, "Length mismatch");
-        require(projectIds.length <= 10, "Too many projects");
-        
-        for (uint256 i = 0; i < projectIds.length; i++) {
-            // Skip rate limiting for batch creation
-            if (bytes(projectIds[i]).length > 0 && 
-                projects[projectIds[i]] == address(0) && 
-                projectList.length < MAX_PROJECTS) {
-                
-                address projectAddress = implementation.clone();
-                
-                SimpleProjectReimbursement(projectAddress).initialize(
-                    projectIds[i],
-                    budgets[i],
-                    omthbToken,
-                    admins[i]
-                );
-                
-                projects[projectIds[i]] = projectAddress;
-                projectList.push(projectAddress);
-                
-                emit ProjectCreated(projectIds[i], projectAddress, msg.sender, budgets[i]);
-            }
-        }
-    }
-    
-    /**
-     * @notice Get total number of projects
-     * @return The total number of projects created
-     */
-    function getProjectCount() external view returns (uint256) {
-        return projectList.length;
-    }
-    
-    /**
-     * @notice Get project address by ID
-     * @param projectId The project ID
-     * @return The project address
-     */
-    function getProject(string memory projectId) external view returns (address) {
-        return projects[projectId];
-    }
-    
-    /**
-     * @notice Get all project addresses
-     * @return Array of all project addresses
-     */
-    function getAllProjects() external view returns (address[] memory) {
-        return projectList;
-    }
-    
-    /**
-     * @notice Get projects paginated
-     * @param offset Starting index
-     * @param limit Number of projects to return
-     * @return Array of project addresses
-     */
-    function getProjectsPaginated(uint256 offset, uint256 limit) 
-        external 
-        view 
-        returns (address[] memory) 
-    {
-        require(offset < projectList.length, "Offset out of bounds");
-        
-        uint256 end = offset + limit;
-        if (end > projectList.length) {
-            end = projectList.length;
+        // Transfer initial budget if needed
+        if (projectBudget > 0) {
+            require(
+                omthbToken.transferFrom(msg.sender, clone, projectBudget),
+                "Budget transfer failed"
+            );
         }
         
-        address[] memory result = new address[](end - offset);
-        for (uint256 i = offset; i < end; i++) {
-            result[i - offset] = projectList[i];
-        }
+        emit ProjectCreated(projectId, clone, projectAdmin, projectBudget);
         
-        return result;
+        return clone;
     }
     
-    /**
-     * @notice Check if a project exists
-     * @param projectId The project ID to check
-     * @return True if the project exists
-     */
-    function projectExists(string memory projectId) external view returns (bool) {
-        return projects[projectId] != address(0);
+    function deactivateProject(string calldata projectId) external onlyRole(OPERATOR_ROLE) {
+        ProjectInfo storage info = projectInfo[projectId];
+        if (info.projectAddress == address(0)) revert ProjectNotFound();
+        if (!info.isActive) revert ProjectNotActive();
+        
+        info.isActive = false;
+        
+        // Pause the project contract
+        SecureProjectReimbursement(info.projectAddress).pause();
+        
+        emit ProjectDeactivated(projectId, msg.sender);
     }
     
-    /**
-     * @notice Emergency pause
-     */
+    function reactivateProject(string calldata projectId) external onlyRole(OPERATOR_ROLE) {
+        ProjectInfo storage info = projectInfo[projectId];
+        if (info.projectAddress == address(0)) revert ProjectNotFound();
+        if (info.isActive) revert ProjectAlreadyActive();
+        
+        info.isActive = true;
+        
+        // Unpause the project contract
+        SecureProjectReimbursement(info.projectAddress).unpause();
+        
+        emit ProjectReactivated(projectId, msg.sender);
+    }
+    
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
     
-    /**
-     * @notice Unpause
-     */
     function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
     
-    /**
-     * @notice Grant project creator role
-     * @param account Address to grant role to
-     */
-    function grantCreatorRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        grantRole(PROJECT_CREATOR_ROLE, account);
+    function getProjectCount() external view returns (uint256) {
+        return projectIds.length;
     }
     
-    /**
-     * @notice Revoke project creator role
-     * @param account Address to revoke role from
-     */
-    function revokeCreatorRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        revokeRole(PROJECT_CREATOR_ROLE, account);
+    function getProjectByIndex(uint256 index) external view returns (
+        string memory projectId,
+        address projectAddress,
+        bool isActive
+    ) {
+        require(index < projectIds.length, "Index out of bounds");
+        projectId = projectIds[index];
+        ProjectInfo memory info = projectInfo[projectId];
+        projectAddress = info.projectAddress;
+        isActive = info.isActive;
+    }
+    
+    function getActiveProjects() external view returns (string[] memory) {
+        uint256 activeCount = 0;
+        
+        // Count active projects
+        for (uint256 i = 0; i < projectIds.length; i++) {
+            if (projectInfo[projectIds[i]].isActive) {
+                activeCount++;
+            }
+        }
+        
+        // Collect active project IDs
+        string[] memory activeProjectIds = new string[](activeCount);
+        uint256 currentIndex = 0;
+        
+        for (uint256 i = 0; i < projectIds.length; i++) {
+            if (projectInfo[projectIds[i]].isActive) {
+                activeProjectIds[currentIndex] = projectIds[i];
+                currentIndex++;
+            }
+        }
+        
+        return activeProjectIds;
     }
 }

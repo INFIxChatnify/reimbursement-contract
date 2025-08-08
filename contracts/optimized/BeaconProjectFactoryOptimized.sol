@@ -65,6 +65,7 @@ contract BeaconProjectFactoryOptimized is AccessControl, ReentrancyGuard, Pausab
     error E06(); // UnauthorizedSigner
     error E07(); // Timeout
     error E08(); // InvalidInput
+    error E09(); // CannotRemoveLastAdmin
     
     constructor(
         address _implementation,
@@ -79,6 +80,30 @@ contract BeaconProjectFactoryOptimized is AccessControl, ReentrancyGuard, Pausab
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(DIRECTOR_ROLE, _admin);
         _grantRole(PAUSER_ROLE, _admin);
+    }
+    
+    /**
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
+     */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert E09();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert E09();
+        }
+        super.renounceRole(role, account);
     }
     
     /**

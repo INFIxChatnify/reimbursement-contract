@@ -1078,26 +1078,12 @@ contract ProjectReimbursementOptimized is
     }
     
     /**
-     * @notice Commit to grant a role (Step 1 of commit-reveal)
-     * @param role The role to grant
-     * @param commitment Hash of role, account, granter, and nonce
-     */
-    function commitRoleGrant(bytes32 role, bytes32 commitment) external onlyRole(getRoleAdmin(role)) {
-        if (roleCommitments[role][msg.sender] != bytes32(0)) revert RoleCommitmentExists();
-        
-        roleCommitments[role][msg.sender] = commitment;
-        roleCommitTimestamps[role][msg.sender] = block.timestamp;
-        
-        emit RoleCommitted(role, address(0), msg.sender, block.timestamp);
-    }
-    
-    /**
-     * @notice Grant role with reveal (Step 2 of commit-reveal)
-     * @param role The role to grant
-     * @param account The account to grant the role to
+     * @notice Revoke role with commit-reveal pattern
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
      * @param nonce The nonce used in commitment
      */
-    function grantRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
+    function revokeRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
         ValidationLib.validateNotZero(account);
         
         // Verify commitment
@@ -1106,6 +1092,25 @@ contract ProjectReimbursementOptimized is
         if (block.timestamp < roleCommitTimestamps[role][msg.sender] + REVEAL_WINDOW) {
             revert RevealTooEarly();
         }
+        
+        // Verify reveal matches commitment
+        bytes32 revealHash = keccak256(abi.encodePacked(role, account, msg.sender, block.chainid, nonce));
+        if (revealHash != commitment) revert InvalidRoleCommitment();
+        
+        // Clear commitment
+        delete roleCommitments[role][msg.sender];
+        delete roleCommitTimestamps[role][msg.sender];
+        
+        // Prevent removing the last admin
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert("Cannot remove last admin");
+        }
+        
+        // Revoke role
+        _revokeRole(role, account);
+        
+        emit RoleRevoked(role, account, msg.sender);
+    }
         
         // Verify reveal matches commitment
         bytes32 revealHash = keccak256(abi.encodePacked(role, account, msg.sender, block.chainid, nonce));
@@ -1176,6 +1181,11 @@ contract ProjectReimbursementOptimized is
         // Clear commitment
         delete roleCommitments[role][msg.sender];
         delete roleCommitTimestamps[role][msg.sender];
+        
+        // Prevent removing the last admin
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert("Cannot remove last admin");
+        }
         
         // Revoke role
         _revokeRole(role, account);

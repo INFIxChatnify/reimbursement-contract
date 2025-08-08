@@ -216,6 +216,30 @@ contract OMTHBTokenV3 is
     }
 
     /**
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
+     */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert InvalidAmount(); // Using existing error to avoid adding new one
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert InvalidAmount(); // Using existing error to avoid adding new one
+        }
+        super.renounceRole(role, account);
+    }
+
+    /**
      * @notice Add a guardian
      * @param guardian The address to add as guardian
      */

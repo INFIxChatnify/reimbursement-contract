@@ -1,127 +1,123 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "./SimpleProjectReimbursement.sol";
+import "../interfaces/IOMTHB.sol";
 
 /**
  * @title SimpleProjectFactory
- * @notice Factory for deploying SimpleProjectReimbursement using minimal proxy pattern
+ * @notice Factory for deploying simple project reimbursement contracts
+ * @dev Uses clones for gas-efficient deployment
  */
-contract SimpleProjectFactory is Ownable {
+contract SimpleProjectFactory is AccessControl {
     using Clones for address;
-
-    /// @notice The implementation contract address
+    
+    // Role for project creators
+    bytes32 public constant PROJECT_CREATOR_ROLE = keccak256("PROJECT_CREATOR_ROLE");
+    
+    // Implementation contract
     address public immutable implementation;
     
-    /// @notice OMTHB token address
-    address public immutable omthbToken;
+    // OMTHB token
+    IOMTHB public immutable omthbToken;
     
-    /// @notice MetaTxForwarder address for gasless support
-    address public immutable metaTxForwarder;
-    
-    /// @notice Mapping of project ID to project address
+    // Project tracking
     mapping(string => address) public projects;
+    string[] public projectIds;
     
-    /// @notice Array of all project addresses
-    address[] public projectList;
+    // Events
+    event ProjectCreated(string indexed projectId, address indexed projectAddress, address admin);
     
-    /// @notice Events
-    event ProjectCreated(
-        string indexed projectId,
-        address indexed projectAddress,
-        address indexed creator,
-        uint256 budget
-    );
+    // Custom errors
+    error ProjectExists();
+    error InvalidProjectId();
+    error InvalidBudget();
+    error InvalidAddress();
+    error CannotRemoveLastAdmin();
     
-    /**
-     * @notice Constructor
-     * @param _implementation The implementation contract address
-     * @param _omthbToken The OMTHB token address
-     * @param _metaTxForwarder The MetaTxForwarder address
-     */
-    constructor(
-        address _implementation,
-        address _omthbToken,
-        address _metaTxForwarder
-    ) Ownable(msg.sender) {
-        require(_implementation != address(0), "Invalid implementation");
-        require(_omthbToken != address(0), "Invalid token");
+    constructor(address _omthbToken, address _admin) {
+        if (_omthbToken == address(0) || _admin == address(0)) {
+            revert InvalidAddress();
+        }
         
-        implementation = _implementation;
-        omthbToken = _omthbToken;
-        metaTxForwarder = _metaTxForwarder;
+        omthbToken = IOMTHB(_omthbToken);
+        implementation = address(new SimpleProjectReimbursement("", address(0), 0, address(0)));
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(PROJECT_CREATOR_ROLE, _admin);
     }
     
     /**
-     * @notice Create a new project
-     * @param projectId The unique project identifier
-     * @param budget The project budget
-     * @param admin The project admin address
-     * @return projectAddress The deployed project address
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
      */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.renounceRole(role, account);
+    }
+    
     function createProject(
-        string memory projectId,
-        uint256 budget,
-        address admin
-    ) external returns (address projectAddress) {
-        require(bytes(projectId).length > 0, "Invalid project ID");
-        require(projects[projectId] == address(0), "Project already exists");
-        require(admin != address(0), "Invalid admin");
+        string calldata projectId,
+        uint256 projectBudget,
+        address projectAdmin
+    ) external onlyRole(PROJECT_CREATOR_ROLE) returns (address) {
+        if (bytes(projectId).length == 0) revert InvalidProjectId();
+        if (projects[projectId] != address(0)) revert ProjectExists();
+        if (projectBudget == 0) revert InvalidBudget();
+        if (projectAdmin == address(0)) revert InvalidAddress();
         
-        // Deploy minimal proxy
-        projectAddress = implementation.clone();
+        // Deploy clone
+        address clone = implementation.clone();
         
-        // Initialize the project
-        SimpleProjectReimbursement(projectAddress).initialize(
+        // Initialize
+        SimpleProjectReimbursement(clone).constructor(
             projectId,
-            budget,
-            omthbToken,
-            admin
+            address(omthbToken),
+            projectBudget,
+            projectAdmin
         );
         
-        // Store project info
-        projects[projectId] = projectAddress;
-        projectList.push(projectAddress);
+        // Track project
+        projects[projectId] = clone;
+        projectIds.push(projectId);
         
-        // Emit event
-        emit ProjectCreated(projectId, projectAddress, msg.sender, budget);
+        // Transfer initial budget if needed
+        if (projectBudget > 0) {
+            require(
+                omthbToken.transferFrom(msg.sender, clone, projectBudget),
+                "Budget transfer failed"
+            );
+        }
         
-        return projectAddress;
+        emit ProjectCreated(projectId, clone, projectAdmin);
+        
+        return clone;
     }
     
-    /**
-     * @notice Get total number of projects
-     * @return The total number of projects created
-     */
     function getProjectCount() external view returns (uint256) {
-        return projectList.length;
+        return projectIds.length;
     }
     
-    /**
-     * @notice Get project address by ID
-     * @param projectId The project ID
-     * @return The project address
-     */
-    function getProject(string memory projectId) external view returns (address) {
-        return projects[projectId];
-    }
-    
-    /**
-     * @notice Get all project addresses
-     * @return Array of all project addresses
-     */
-    function getAllProjects() external view returns (address[] memory) {
-        return projectList;
-    }
-    
-    /**
-     * @notice Check if a project exists
-     * @param projectId The project ID to check
-     * @return True if the project exists
-     */
-    function projectExists(string memory projectId) external view returns (bool) {
-        return projects[projectId] != address(0);
+    function getProjectByIndex(uint256 index) external view returns (string memory projectId, address projectAddress) {
+        require(index < projectIds.length, "Index out of bounds");
+        projectId = projectIds[index];
+        projectAddress = projects[projectId];
     }
 }

@@ -81,6 +81,7 @@ contract OMTHBMultiSig is AccessControl {
     error OperationAlreadyExecuted();
     error InvalidAddress();
     error InvalidAmount();
+    error CannotRemoveLastAdmin();
     
     constructor(address _omthbToken, address[] memory _signers) {
         if (_omthbToken == address(0)) revert InvalidAddress();
@@ -94,6 +95,30 @@ contract OMTHBMultiSig is AccessControl {
             if (_signers[i] == address(0)) revert InvalidAddress();
             _grantRole(SIGNER_ROLE, _signers[i]);
         }
+    }
+    
+    /**
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
+     */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.renounceRole(role, account);
     }
     
     /**

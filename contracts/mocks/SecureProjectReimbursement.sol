@@ -8,18 +8,26 @@ import "../interfaces/IOMTHB.sol";
 
 /**
  * @title SecureProjectReimbursement
- * @notice Enhanced security version with audit fixes
+ * @notice Secure reimbursement contract with enhanced features
+ * @dev Implementation with pausable functionality and multi-level approval
  */
 contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable {
     // Roles
+    bytes32 public constant REQUESTER_ROLE = keccak256("REQUESTER_ROLE");
     bytes32 public constant SECRETARY_ROLE = keccak256("SECRETARY_ROLE");
     bytes32 public constant COMMITTEE_ROLE = keccak256("COMMITTEE_ROLE");
     bytes32 public constant FINANCE_ROLE = keccak256("FINANCE_ROLE");
     bytes32 public constant DIRECTOR_ROLE = keccak256("DIRECTOR_ROLE");
-    bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
     
-    // Request status
-    enum RequestStatus {
+    // State variables
+    string public projectId;
+    address public projectFactory;
+    IOMTHB public omthbToken;
+    uint256 public projectBudget;
+    uint256 public totalDistributed;
+    
+    // Request status enum
+    enum Status {
         Pending,
         SecretaryApproved,
         CommitteeApproved,
@@ -31,217 +39,202 @@ contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable 
     
     // Request structure
     struct Request {
+        uint256 id;
         address requester;
-        address[] recipients;
-        uint256[] amounts;
-        uint256 totalAmount;
+        address recipient;
+        uint256 amount;
         string description;
-        RequestStatus status;
+        Status status;
         uint256 createdAt;
+        mapping(bytes32 => address) approvers;
     }
     
-    // State variables
-    IOMTHB public omthbToken;
-    string public projectId;
-    uint256 public projectBudget;
-    uint256 public totalDistributed;
-    bool private initialized;
-    
-    // Requests
+    // Request counter and mapping
+    uint256 private requestCounter;
     mapping(uint256 => Request) public requests;
-    uint256 public requestCounter;
     
     // Events
-    event RequestCreated(uint256 indexed requestId, address indexed requester);
-    event RequestApproved(uint256 indexed requestId, uint8 level, address indexed approver);
-    event TokensDistributed(uint256 indexed requestId, uint256 totalAmount);
+    event RequestCreated(uint256 indexed requestId, address requester, address recipient, uint256 amount);
+    event RequestApproved(uint256 indexed requestId, Status newStatus, address approver);
     event RequestCancelled(uint256 indexed requestId);
-    event EmergencyWithdraw(address indexed to, uint256 amount);
+    event FundsDistributed(uint256 indexed requestId, address recipient, uint256 amount);
+    
+    // Custom errors
+    error InvalidAmount();
+    error InvalidAddress();
+    error InsufficientBudget();
+    error RequestNotFound();
+    error InvalidStatus();
+    error AlreadyApproved();
+    error UnauthorizedApprover();
+    error TransferFailed();
+    error CannotRemoveLastAdmin();
+    
+    modifier onlyFactory() {
+        require(msg.sender == projectFactory, "Only factory");
+        _;
+    }
     
     constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        // Implementation will be initialized by factory
     }
     
     /**
-     * @notice Initialize the project with security checks
+     * @notice Override revokeRole to prevent removing the last admin
+     * @param role The role to revoke
+     * @param account The account to revoke the role from
      */
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.revokeRole(role, account);
+    }
+    
+    /**
+     * @notice Override renounceRole to prevent the last admin from renouncing
+     * @param role The role to renounce
+     * @param account The account renouncing the role
+     */
+    function renounceRole(bytes32 role, address account) public override {
+        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+            revert CannotRemoveLastAdmin();
+        }
+        super.renounceRole(role, account);
+    }
+    
     function initialize(
         string memory _projectId,
-        uint256 _projectBudget,
         address _omthbToken,
+        uint256 _projectBudget,
         address _admin
-    ) external {
-        require(!initialized, "Already initialized");
-        require(bytes(_projectId).length > 0, "Invalid project ID");
-        require(_projectBudget > 0, "Invalid budget");
-        require(_omthbToken != address(0), "Invalid token address");
-        require(_omthbToken.code.length > 0, "Token not a contract");
-        require(_admin != address(0), "Invalid admin");
+    ) external onlyFactory {
+        if (_omthbToken == address(0)) revert InvalidAddress();
+        if (_admin == address(0)) revert InvalidAddress();
         
-        initialized = true;
         projectId = _projectId;
-        projectBudget = _projectBudget;
+        projectFactory = msg.sender;
         omthbToken = IOMTHB(_omthbToken);
+        projectBudget = _projectBudget;
         
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(SECRETARY_ROLE, _admin);
-        _grantRole(DISTRIBUTOR_ROLE, _admin);
     }
     
-    /**
-     * @notice Create multi-recipient reimbursement request
-     */
-    function createRequestMultiple(
-        address[] calldata recipients,
-        uint256[] calldata amounts,
-        string calldata description,
-        string calldata receiptHash
-    ) external onlyRole(SECRETARY_ROLE) whenNotPaused returns (uint256) {
-        require(recipients.length == amounts.length, "Length mismatch");
-        require(recipients.length > 0 && recipients.length <= 100, "Invalid recipients count");
-        
-        uint256 total = 0;
-        for (uint256 i = 0; i < amounts.length; i++) {
-            require(recipients[i] != address(0), "Invalid recipient");
-            require(amounts[i] > 0, "Invalid amount");
-            total += amounts[i];
-        }
-        
-        require(totalDistributed + total <= projectBudget, "Exceeds budget");
+    function createRequest(
+        address recipient,
+        uint256 amount,
+        string calldata description
+    ) external onlyRole(REQUESTER_ROLE) whenNotPaused returns (uint256) {
+        if (recipient == address(0)) revert InvalidAddress();
+        if (amount == 0) revert InvalidAmount();
+        if (totalDistributed + amount > projectBudget) revert InsufficientBudget();
         
         uint256 requestId = requestCounter++;
-        requests[requestId] = Request({
-            requester: msg.sender,
-            recipients: recipients,
-            amounts: amounts,
-            totalAmount: total,
-            description: description,
-            status: RequestStatus.Pending,
-            createdAt: block.timestamp
-        });
+        Request storage request = requests[requestId];
+        request.id = requestId;
+        request.requester = msg.sender;
+        request.recipient = recipient;
+        request.amount = amount;
+        request.description = description;
+        request.status = Status.Pending;
+        request.createdAt = block.timestamp;
         
-        emit RequestCreated(requestId, msg.sender);
+        emit RequestCreated(requestId, msg.sender, recipient, amount);
         return requestId;
     }
     
-    /**
-     * @notice Secretary approval
-     */
     function approveBySecretary(uint256 requestId) external onlyRole(SECRETARY_ROLE) whenNotPaused {
         Request storage request = requests[requestId];
-        require(request.status == RequestStatus.Pending, "Invalid status");
+        if (request.id != requestId || request.amount == 0) revert RequestNotFound();
+        if (request.status != Status.Pending) revert InvalidStatus();
+        if (request.approvers[SECRETARY_ROLE] != address(0)) revert AlreadyApproved();
         
-        request.status = RequestStatus.SecretaryApproved;
-        emit RequestApproved(requestId, 1, msg.sender);
+        request.approvers[SECRETARY_ROLE] = msg.sender;
+        request.status = Status.SecretaryApproved;
+        
+        emit RequestApproved(requestId, Status.SecretaryApproved, msg.sender);
     }
     
-    /**
-     * @notice Committee approval  
-     */
     function approveByCommittee(uint256 requestId) external onlyRole(COMMITTEE_ROLE) whenNotPaused {
         Request storage request = requests[requestId];
-        require(request.status == RequestStatus.SecretaryApproved, "Invalid status");
+        if (request.id != requestId || request.amount == 0) revert RequestNotFound();
+        if (request.status != Status.SecretaryApproved) revert InvalidStatus();
+        if (request.approvers[COMMITTEE_ROLE] != address(0)) revert AlreadyApproved();
         
-        request.status = RequestStatus.CommitteeApproved;
-        emit RequestApproved(requestId, 2, msg.sender);
+        request.approvers[COMMITTEE_ROLE] = msg.sender;
+        request.status = Status.CommitteeApproved;
+        
+        emit RequestApproved(requestId, Status.CommitteeApproved, msg.sender);
     }
     
-    /**
-     * @notice Finance approval
-     */
     function approveByFinance(uint256 requestId) external onlyRole(FINANCE_ROLE) whenNotPaused {
         Request storage request = requests[requestId];
-        require(request.status == RequestStatus.CommitteeApproved, "Invalid status");
+        if (request.id != requestId || request.amount == 0) revert RequestNotFound();
+        if (request.status != Status.CommitteeApproved) revert InvalidStatus();
+        if (request.approvers[FINANCE_ROLE] != address(0)) revert AlreadyApproved();
         
-        request.status = RequestStatus.FinanceApproved;
-        emit RequestApproved(requestId, 3, msg.sender);
+        request.approvers[FINANCE_ROLE] = msg.sender;
+        request.status = Status.FinanceApproved;
+        
+        emit RequestApproved(requestId, Status.FinanceApproved, msg.sender);
     }
     
-    /**
-     * @notice Director approval
-     */
-    function approveByDirector(uint256 requestId) external onlyRole(DIRECTOR_ROLE) whenNotPaused {
+    function approveByDirector(uint256 requestId) external onlyRole(DIRECTOR_ROLE) whenNotPaused nonReentrant {
         Request storage request = requests[requestId];
-        require(request.status == RequestStatus.FinanceApproved, "Invalid status");
+        if (request.id != requestId || request.amount == 0) revert RequestNotFound();
+        if (request.status != Status.FinanceApproved) revert InvalidStatus();
+        if (request.approvers[DIRECTOR_ROLE] != address(0)) revert AlreadyApproved();
         
-        request.status = RequestStatus.DirectorApproved;
-        emit RequestApproved(requestId, 4, msg.sender);
+        request.approvers[DIRECTOR_ROLE] = msg.sender;
+        request.status = Status.DirectorApproved;
+        
+        emit RequestApproved(requestId, Status.DirectorApproved, msg.sender);
+        
+        // Auto-distribute after director approval
+        _distributeFunds(requestId);
     }
     
-    /**
-     * @notice Distribute tokens with enhanced security
-     */
-    function distribute(uint256 requestId) external nonReentrant onlyRole(DISTRIBUTOR_ROLE) whenNotPaused {
+    function cancelRequest(uint256 requestId) external whenNotPaused {
         Request storage request = requests[requestId];
-        require(request.status == RequestStatus.DirectorApproved, "Not approved");
+        if (request.id != requestId || request.amount == 0) revert RequestNotFound();
         
-        // Check contract balance
-        uint256 contractBalance = omthbToken.balanceOf(address(this));
-        require(contractBalance >= request.totalAmount, "Insufficient balance");
-        
-        request.status = RequestStatus.Distributed;
-        totalDistributed += request.totalAmount;
-        
-        // Transfer tokens to recipients
-        for (uint256 i = 0; i < request.recipients.length; i++) {
-            require(
-                omthbToken.transfer(request.recipients[i], request.amounts[i]),
-                "Transfer failed"
-            );
+        // Only requester or admin can cancel
+        if (msg.sender != request.requester && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert UnauthorizedApprover();
         }
         
-        emit TokensDistributed(requestId, request.totalAmount);
-    }
-    
-    /**
-     * @notice Cancel request
-     */
-    function cancelRequest(uint256 requestId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        Request storage request = requests[requestId];
-        require(request.status != RequestStatus.Distributed, "Already distributed");
-        require(request.status != RequestStatus.Cancelled, "Already cancelled");
+        if (request.status == Status.Distributed) revert InvalidStatus();
         
-        request.status = RequestStatus.Cancelled;
+        request.status = Status.Cancelled;
         emit RequestCancelled(requestId);
     }
     
-    /**
-     * @notice Emergency pause
-     */
+    function _distributeFunds(uint256 requestId) private {
+        Request storage request = requests[requestId];
+        
+        request.status = Status.Distributed;
+        totalDistributed += request.amount;
+        
+        bool success = omthbToken.transfer(request.recipient, request.amount);
+        if (!success) revert TransferFailed();
+        
+        emit FundsDistributed(requestId, request.recipient, request.amount);
+    }
+    
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
     
-    /**
-     * @notice Unpause
-     */
     function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
     
-    /**
-     * @notice Emergency withdraw
-     */
-    function emergencyWithdraw(address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(to != address(0), "Invalid address");
-        uint256 balance = omthbToken.balanceOf(address(this));
-        require(balance > 0, "No balance");
-        
-        require(omthbToken.transfer(to, balance), "Transfer failed");
-        emit EmergencyWithdraw(to, balance);
+    function updateBudget(uint256 newBudget) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newBudget < totalDistributed) revert InvalidAmount();
+        projectBudget = newBudget;
     }
     
-    /**
-     * @notice Get request details
-     */
-    function getRequest(uint256 requestId) external view returns (Request memory) {
-        return requests[requestId];
-    }
-    
-    /**
-     * @notice Get project balance
-     */
-    function getProjectBalance() external view returns (uint256) {
-        return omthbToken.balanceOf(address(this));
+    function getApprover(uint256 requestId, bytes32 role) external view returns (address) {
+        return requests[requestId].approvers[role];
     }
 }
