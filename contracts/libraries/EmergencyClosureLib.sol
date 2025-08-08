@@ -107,6 +107,28 @@ library EmergencyClosureLib {
     }
     
     /**
+     * @notice Check if there's any active closure request across all requests
+     * @param closureRequests Mapping of closure requests
+     * @param closureIdCounter Total number of closure requests created
+     * @return True if there's any active closure request
+     */
+    function hasAnyActiveClosureRequest(
+        mapping(uint256 => EmergencyClosureRequest) storage closureRequests,
+        uint256 closureIdCounter
+    ) internal view returns (bool) {
+        // Check all closure requests for active status
+        for (uint256 i = 0; i < closureIdCounter; i++) {
+            ClosureStatus status = closureRequests[i].status;
+            if (status == ClosureStatus.Initiated || 
+                status == ClosureStatus.PartiallyApproved ||
+                status == ClosureStatus.FullyApproved) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
      * @notice Add committee approver to closure request
      * @param request The emergency closure request
      * @param approver The approver address

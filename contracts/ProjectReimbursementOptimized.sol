@@ -1111,6 +1111,37 @@ contract ProjectReimbursementOptimized is
         
         emit RoleRevoked(role, account, msg.sender);
     }
+    
+    /**
+     * @notice Commit a role operation for commit-reveal pattern
+     * @param role The role to commit for
+     * @param commitment Hash of role, account, granter, and nonce
+     */
+    function commitRole(bytes32 role, bytes32 commitment) external {
+        if (!hasRole(getRoleAdmin(role), msg.sender)) revert UnauthorizedApprover();
+        if (roleCommitments[role][msg.sender] != bytes32(0)) revert RoleCommitmentExists();
+        
+        roleCommitments[role][msg.sender] = commitment;
+        roleCommitTimestamps[role][msg.sender] = block.timestamp;
+        
+        emit RoleCommitted(role, address(0), msg.sender, block.timestamp);
+    }
+    
+    /**
+     * @notice Grant role with commit-reveal pattern
+     * @param role The role to grant
+     * @param account The account to grant the role to
+     * @param nonce The nonce used in commitment
+     */
+    function grantRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
+        ValidationLib.validateNotZero(account);
+        
+        // Verify commitment
+        bytes32 commitment = roleCommitments[role][msg.sender];
+        if (commitment == bytes32(0)) revert InvalidRoleCommitment();
+        if (block.timestamp < roleCommitTimestamps[role][msg.sender] + REVEAL_WINDOW) {
+            revert RevealTooEarly();
+        }
         
         // Verify reveal matches commitment
         bytes32 revealHash = keccak256(abi.encodePacked(role, account, msg.sender, block.chainid, nonce));
@@ -1216,7 +1247,7 @@ contract ProjectReimbursementOptimized is
         EmergencyClosureLib.validateClosureInputs(returnAddress, reason);
         
         // Check if there's already an active closure request using library
-        if (EmergencyClosureLib.hasActiveClosureRequest(activeClosureRequestId, closureRequests)) {
+        if (EmergencyClosureLib.hasAnyActiveClosureRequest(closureRequests, _closureIdCounter)) {
             revert ActiveClosureExists();
         }
         
