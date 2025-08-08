@@ -167,6 +167,9 @@ contract ProjectReimbursementOptimized is
     uint256 public constant CRITICAL_OPERATION_THRESHOLD = 2;
     mapping(bytes32 => address[]) public criticalOperationApprovers;
     
+    /// @notice Time window for critical operations (5 minutes)
+    uint256 public constant CRITICAL_OPERATION_TIME_WINDOW = 5 minutes;
+    
     /// @notice Storage gap for upgrades
     uint256[27] private __gap;  // Reduced by 2: virtualPayers mapping and currentAdmin
 
@@ -718,7 +721,9 @@ contract ProjectReimbursementOptimized is
      * @notice Activate emergency stop (requires multi-sig)
      */
     function activateEmergencyStop() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        bytes32 operationId = keccak256(abi.encodePacked("emergencyStop", block.timestamp));
+        // Use time window to allow admins to approve the same operation
+        uint256 timeWindow = block.timestamp - (block.timestamp % CRITICAL_OPERATION_TIME_WINDOW);
+        bytes32 operationId = keccak256(abi.encodePacked("emergencyStop", timeWindow));
         
         // Check if already approved by this admin
         address[] storage approvers = criticalOperationApprovers[operationId];
