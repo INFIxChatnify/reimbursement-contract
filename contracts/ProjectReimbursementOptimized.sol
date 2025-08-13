@@ -137,6 +137,9 @@ contract ProjectReimbursementOptimized is
     address public pendingAdmin;
     uint256 public pendingAdminTimestamp;
     
+    /// @notice Current admin being replaced during transfer
+    address public adminBeingReplaced;
+    
     /// @notice Timelock queue for critical operations
     mapping(bytes32 => uint256) public timelockQueue;
     
@@ -174,7 +177,7 @@ contract ProjectReimbursementOptimized is
     bool public adminInitialized;
     
     /// @notice Storage gap for upgrades
-    uint256[26] private __gap;  // Reduced by 3: virtualPayers mapping, currentAdmin, and adminInitialized
+    uint256[25] private __gap;  // Reduced by 4: virtualPayers mapping, currentAdmin, adminInitialized, and adminBeingReplaced
 
     /// @notice Events - Enhanced for multi-recipient support
     event RequestCreated(
@@ -259,6 +262,7 @@ contract ProjectReimbursementOptimized is
     error AdminAlreadyInitialized();
     error MultipleAdminsNotAllowed();
     error AdminRoleCannotBeGrantedAfterInit();
+    error AdminTransferInProgress();
 
     /// @notice Modifier to check if caller is factory
     modifier onlyFactory() {
@@ -629,7 +633,8 @@ contract ProjectReimbursementOptimized is
      * @param requestId The request ID
      * @param nonce The nonce used in commitment
      */
-    function _verifyAndRevealApproval(uint256 requestId, uint256 nonce) private {
+    function _verifyAndRev
+ealApproval(uint256 requestId, uint256 nonce) private {
         // Verify commitment exists and reveal window has passed
         bytes32 commitment = approvalCommitments[requestId][msg.sender];
         if (commitment == bytes32(0)) revert InvalidCommitment();
@@ -983,13 +988,20 @@ contract ProjectReimbursementOptimized is
      * @param newAdmin The address of the new admin
      */
     function initiateAdminTransfer(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        // NEW: Ensure only one admin exists
+        // Ensure only one admin exists
         if (getAdminCount() != 1) {
-            revert("Multiple admins not allowed");
+            revert MultipleAdminsNotAllowed();
+        }
+        
+        // Check if there's already a pending transfer
+        if (pendingAdmin != address(0)) {
+            revert AdminTransferInProgress();
         }
         
         ValidationLib.validateNotZero(newAdmin);
         
+        // Store the current admin that will be replaced
+        adminBeingReplaced = msg.sender;
         pendingAdmin = newAdmin;
         pendingAdminTimestamp = block.timestamp;
         
@@ -1005,19 +1017,27 @@ contract ProjectReimbursementOptimized is
         if (pendingAdminTimestamp == 0) revert TransferNotInitiated();
         if (block.timestamp < pendingAdminTimestamp + TIMELOCK_DURATION) revert TimelockNotExpired();
         
-        // NEW: Get the current admin (should be only one)
-        address previousAdmin = getAdminAt(0);
+        // Ensure the admin being replaced hasn't changed
+        if (!hasRole(DEFAULT_ADMIN_ROLE, adminBeingReplaced)) {
+            revert("Admin configuration changed during transfer");
+        }
+        
+        // Ensure still only one admin
+        if (getAdminCount() != 1) {
+            revert MultipleAdminsNotAllowed();
+        }
         
         // Transfer admin role atomically
-        _revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
+        _revokeRole(DEFAULT_ADMIN_ROLE, adminBeingReplaced);
         _grantRole(DEFAULT_ADMIN_ROLE, pendingAdmin);
         
         currentAdmin = pendingAdmin;
         
-        emit AdminTransferCompleted(previousAdmin, pendingAdmin);
+        emit AdminTransferCompleted(adminBeingReplaced, pendingAdmin);
         
-        // Reset pending admin
+        // Reset pending admin and admin being replaced
         pendingAdmin = address(0);
+        adminBeingReplaced = address(0);
         pendingAdminTimestamp = 0;
     }
     
@@ -1146,9 +1166,14 @@ contract ProjectReimbursementOptimized is
     function grantRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
         ValidationLib.validateNotZero(account);
         
-        // NEW: Prevent admin role from being granted after initialization
+        // Prevent admin role from being granted after initialization
         if (role == DEFAULT_ADMIN_ROLE) {
-            revert("Admin role cannot be granted after initialization");
+            revert AdminRoleCannotBeGrantedAfterInit();
+        }
+        
+        // Prevent granting roles during admin transfer
+        if (pendingAdmin != address(0)) {
+            revert AdminTransferInProgress();
         }
         
         // Verify commitment
@@ -1184,10 +1209,10 @@ contract ProjectReimbursementOptimized is
             revert UnauthorizedApprover();
         }
         
-        // NEW: Prevent admin role from being granted more than once
+        // Prevent admin role from being granted more than once
         if (role == DEFAULT_ADMIN_ROLE) {
             if (adminInitialized) {
-                revert("Admin already initialized");
+                revert AdminAlreadyInitialized();
             }
             adminInitialized = true;
         }
