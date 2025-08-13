@@ -11,10 +11,20 @@ import "../ERC2771Context.sol";
 contract GaslessProjectReimbursement is SimpleProjectReimbursement, ERC2771Context {
     /**
      * @notice Constructor
+     * @param _projectId The project identifier
+     * @param _omthbToken The OMTHB token address
+     * @param _projectBudget The project budget
+     * @param _admin The admin address
      * @param _trustedForwarder The trusted forwarder address for meta transactions
      */
-    constructor(address _trustedForwarder) 
-        SimpleProjectReimbursement()
+    constructor(
+        string memory _projectId,
+        address _omthbToken,
+        uint256 _projectBudget,
+        address _admin,
+        address _trustedForwarder
+    ) 
+        SimpleProjectReimbursement(_projectId, _omthbToken, _projectBudget, _admin)
         ERC2771Context(_trustedForwarder) 
     {}
     

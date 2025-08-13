@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "./base/AdminProtectedAccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./interfaces/IOMTHB.sol";
 import "./libraries/ValidationLib.sol";
@@ -20,7 +20,7 @@ import "./libraries/EmergencyClosureLib.sol";
  */
 contract ProjectReimbursementOptimized is 
     Initializable,
-    AccessControlUpgradeable,
+    AdminProtectedAccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     PausableUpgradeable
 {
@@ -319,7 +319,7 @@ contract ProjectReimbursementOptimized is
         projectBudget = _projectBudget;
         emergencyStop = false;
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
         currentAdmin = _admin;
     }
 
@@ -982,7 +982,7 @@ contract ProjectReimbursementOptimized is
      */
     function initiateAdminTransfer(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
         // NEW: Ensure only one admin exists
-        if (getRoleMemberCount(DEFAULT_ADMIN_ROLE) != 1) {
+        if (getAdminCount() != 1) {
             revert("Multiple admins not allowed");
         }
         
@@ -1004,7 +1004,7 @@ contract ProjectReimbursementOptimized is
         if (block.timestamp < pendingAdminTimestamp + TIMELOCK_DURATION) revert TimelockNotExpired();
         
         // NEW: Get the current admin (should be only one)
-        address previousAdmin = getRoleMember(DEFAULT_ADMIN_ROLE, 0);
+        address previousAdmin = getAdminAt(0);
         
         // Transfer admin role atomically
         _revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
@@ -1110,7 +1110,7 @@ contract ProjectReimbursementOptimized is
         delete roleCommitTimestamps[role][msg.sender];
         
         // Prevent removing the last admin
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
+        if (role == DEFAULT_ADMIN_ROLE && getAdminCount() == 1) {
             revert("Cannot remove last admin");
         }
         
@@ -1209,42 +1209,6 @@ contract ProjectReimbursementOptimized is
     function revokeRole(bytes32 role, address account) public pure override {
         revert("Use revokeRoleWithReveal instead");
     }
-    
-    /**
-     * @notice Revoke role with commit-reveal pattern
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     * @param nonce The nonce used in commitment
-     */
-    function revokeRoleWithReveal(bytes32 role, address account, uint256 nonce) external onlyRole(getRoleAdmin(role)) {
-        ValidationLib.validateNotZero(account);
-        
-        // Verify commitment
-        bytes32 commitment = roleCommitments[role][msg.sender];
-        if (commitment == bytes32(0)) revert InvalidRoleCommitment();
-        if (block.timestamp < roleCommitTimestamps[role][msg.sender] + REVEAL_WINDOW) {
-            revert RevealTooEarly();
-        }
-        
-        // Verify reveal matches commitment
-        bytes32 revealHash = keccak256(abi.encodePacked(role, account, msg.sender, block.chainid, nonce));
-        if (revealHash != commitment) revert InvalidRoleCommitment();
-        
-        // Clear commitment
-        delete roleCommitments[role][msg.sender];
-        delete roleCommitTimestamps[role][msg.sender];
-        
-        // Prevent removing the last admin
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert("Cannot remove last admin");
-        }
-        
-        // Revoke role
-        _revokeRole(role, account);
-        
-        emit RoleRevoked(role, account, msg.sender);
-    }
-
     // ============================================
     // EMERGENCY CLOSURE FUNCTIONS
     // ============================================

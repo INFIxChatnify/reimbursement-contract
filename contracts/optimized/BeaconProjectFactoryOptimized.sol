@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "../base/AdminProtectedAccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IOMTHB.sol";
@@ -13,7 +13,7 @@ import "../interfaces/IOMTHB.sol";
  * @notice Optimized beacon factory with reduced bytecode size
  * @dev Uses beacon proxy pattern with minimal features
  */
-contract BeaconProjectFactoryOptimized is AccessControl, ReentrancyGuard, Pausable {
+contract BeaconProjectFactoryOptimized is AdminProtectedAccessControl, ReentrancyGuard, Pausable {
     // Roles
     bytes32 constant CREATOR_ROLE = keccak256("PROJECT_CREATOR_ROLE");
     bytes32 constant DEPUTY_ROLE = keccak256("DEPUTY_ROLE");
@@ -65,7 +65,6 @@ contract BeaconProjectFactoryOptimized is AccessControl, ReentrancyGuard, Pausab
     error E06(); // UnauthorizedSigner
     error E07(); // Timeout
     error E08(); // InvalidInput
-    error E09(); // CannotRemoveLastAdmin
     
     constructor(
         address _implementation,
@@ -77,34 +76,11 @@ contract BeaconProjectFactoryOptimized is AccessControl, ReentrancyGuard, Pausab
         beacon = new UpgradeableBeacon(_implementation, address(this));
         omthbToken = IOMTHB(_omthbToken);
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
         _grantRole(DIRECTOR_ROLE, _admin);
         _grantRole(PAUSER_ROLE, _admin);
     }
     
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert E09();
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert E09();
-        }
-        super.renounceRole(role, account);
-    }
     
     /**
      * @notice Create project

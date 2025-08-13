@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "../base/AdminProtectedAccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IOMTHB.sol";
 
@@ -10,7 +10,7 @@ import "../interfaces/IOMTHB.sol";
  * @notice Simple reimbursement contract for testing
  * @dev Minimal implementation for unit tests
  */
-contract SimpleProjectReimbursement is AccessControl, ReentrancyGuard {
+contract SimpleProjectReimbursement is AdminProtectedAccessControl, ReentrancyGuard {
     // Roles
     bytes32 public constant REQUESTER_ROLE = keccak256("REQUESTER_ROLE");
     bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE");
@@ -49,7 +49,10 @@ contract SimpleProjectReimbursement is AccessControl, ReentrancyGuard {
     error NotApproved();
     error AlreadyDistributed();
     error TransferFailed();
-    error CannotRemoveLastAdmin();
+    error AlreadyInitialized();
+    
+    // Initialization flag
+    bool private initialized;
     
     constructor(
         string memory _projectId,
@@ -57,37 +60,37 @@ contract SimpleProjectReimbursement is AccessControl, ReentrancyGuard {
         uint256 _projectBudget,
         address _admin
     ) {
+        // Only initialize if all parameters are provided (for direct deployment)
+        if (bytes(_projectId).length > 0 && _omthbToken != address(0) && _admin != address(0)) {
+            projectId = _projectId;
+            omthbToken = IOMTHB(_omthbToken);
+            projectBudget = _projectBudget;
+            
+            _initializeAdmin(_admin);
+            _grantRole(APPROVER_ROLE, _admin);
+            initialized = true;
+        }
+    }
+    
+    function initialize(
+        string memory _projectId,
+        address _omthbToken,
+        uint256 _projectBudget,
+        address _admin
+    ) external {
+        if (initialized) revert AlreadyInitialized();
+        if (_omthbToken == address(0)) revert InvalidAddress();
+        if (_admin == address(0)) revert InvalidAddress();
+        
+        initialized = true;
         projectId = _projectId;
         omthbToken = IOMTHB(_omthbToken);
         projectBudget = _projectBudget;
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
         _grantRole(APPROVER_ROLE, _admin);
     }
     
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.renounceRole(role, account);
-    }
     
     function createRequest(
         address recipient,

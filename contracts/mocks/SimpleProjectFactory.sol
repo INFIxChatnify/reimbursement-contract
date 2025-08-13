@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "../base/AdminProtectedAccessControl.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./SimpleProjectReimbursement.sol";
 import "../interfaces/IOMTHB.sol";
@@ -11,7 +11,7 @@ import "../interfaces/IOMTHB.sol";
  * @notice Factory for deploying simple project reimbursement contracts
  * @dev Uses clones for gas-efficient deployment
  */
-contract SimpleProjectFactory is AccessControl {
+contract SimpleProjectFactory is AdminProtectedAccessControl {
     using Clones for address;
     
     // Role for project creators
@@ -35,7 +35,6 @@ contract SimpleProjectFactory is AccessControl {
     error InvalidProjectId();
     error InvalidBudget();
     error InvalidAddress();
-    error CannotRemoveLastAdmin();
     
     constructor(address _omthbToken, address _admin) {
         if (_omthbToken == address(0) || _admin == address(0)) {
@@ -45,33 +44,10 @@ contract SimpleProjectFactory is AccessControl {
         omthbToken = IOMTHB(_omthbToken);
         implementation = address(new SimpleProjectReimbursement("", address(0), 0, address(0)));
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
         _grantRole(PROJECT_CREATOR_ROLE, _admin);
     }
     
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.renounceRole(role, account);
-    }
     
     function createProject(
         string calldata projectId,
@@ -87,7 +63,7 @@ contract SimpleProjectFactory is AccessControl {
         address clone = implementation.clone();
         
         // Initialize
-        SimpleProjectReimbursement(clone).constructor(
+        SimpleProjectReimbursement(clone).initialize(
             projectId,
             address(omthbToken),
             projectBudget,

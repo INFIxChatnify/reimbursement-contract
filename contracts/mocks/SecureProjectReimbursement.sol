@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "../base/AdminProtectedAccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../interfaces/IOMTHB.sol";
 
 /**
@@ -11,7 +11,7 @@ import "../interfaces/IOMTHB.sol";
  * @notice Secure reimbursement contract with enhanced features
  * @dev Implementation with pausable functionality and multi-level approval
  */
-contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable {
+contract SecureProjectReimbursement is AdminProtectedAccessControl, ReentrancyGuard, Pausable {
     // Roles
     bytes32 public constant REQUESTER_ROLE = keccak256("REQUESTER_ROLE");
     bytes32 public constant SECRETARY_ROLE = keccak256("SECRETARY_ROLE");
@@ -68,7 +68,6 @@ contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable 
     error AlreadyApproved();
     error UnauthorizedApprover();
     error TransferFailed();
-    error CannotRemoveLastAdmin();
     
     modifier onlyFactory() {
         require(msg.sender == projectFactory, "Only factory");
@@ -79,29 +78,6 @@ contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable 
         // Implementation will be initialized by factory
     }
     
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.renounceRole(role, account);
-    }
     
     function initialize(
         string memory _projectId,
@@ -117,7 +93,7 @@ contract SecureProjectReimbursement is AccessControl, ReentrancyGuard, Pausable 
         omthbToken = IOMTHB(_omthbToken);
         projectBudget = _projectBudget;
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
     }
     
     function createRequest(

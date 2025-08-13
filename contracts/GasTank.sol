@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./base/AdminProtectedAccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * @notice Manages gas credits and refunds for meta transactions
  * @dev Holds native tokens (OM) to pay for gas on behalf of users
  */
-contract GasTank is AccessControl, ReentrancyGuard, Pausable {
+contract GasTank is AdminProtectedAccessControl, ReentrancyGuard, Pausable {
     /// @notice Role identifiers
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
@@ -85,41 +85,17 @@ contract GasTank is AccessControl, ReentrancyGuard, Pausable {
     error InvalidGasUsage();
     error RefundFailed();
     error CreditNotActive();
-    error CannotRemoveLastAdmin();
     
     constructor(address _admin, address _emergencyWithdrawAddress) {
         if (_admin == address(0) || _emergencyWithdrawAddress == address(0)) {
             revert InvalidAddress();
         }
         
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _initializeAdmin(_admin);
         _grantRole(OPERATOR_ROLE, _admin);
         emergencyWithdrawAddress = _emergencyWithdrawAddress;
     }
     
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert CannotRemoveLastAdmin();
-        }
-        super.renounceRole(role, account);
-    }
     
     /**
      * @notice Deposit gas credits for an account

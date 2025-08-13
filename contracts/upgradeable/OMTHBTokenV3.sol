@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "../base/AdminProtectedAccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -24,7 +24,7 @@ contract OMTHBTokenV3 is
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
     ERC20PausableUpgradeable,
-    AccessControlUpgradeable,
+    AdminProtectedAccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     UUPSUpgradeable,
     ERC2771ContextUpgradeable,
@@ -240,29 +240,6 @@ contract OMTHBTokenV3 is
         emit MinterRevoked(minter, _msgSender());
     }
 
-    /**
-     * @notice Override revokeRole to prevent removing the last admin
-     * @param role The role to revoke
-     * @param account The account to revoke the role from
-     */
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert InvalidAmount(); // Using existing error to avoid adding new one
-        }
-        super.revokeRole(role, account);
-    }
-    
-    /**
-     * @notice Override renounceRole to prevent the last admin from renouncing
-     * @param role The role to renounce
-     * @param account The account renouncing the role
-     */
-    function renounceRole(bytes32 role, address account) public override {
-        if (role == DEFAULT_ADMIN_ROLE && getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1) {
-            revert InvalidAmount(); // Using existing error to avoid adding new one
-        }
-        super.renounceRole(role, account);
-    }
 
     /**
      * @notice Add a guardian
