@@ -693,7 +693,9 @@ contract ProjectReimbursementOptimized is
      * @notice Pause the contract (requires multi-sig)
      */
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        bytes32 operationId = keccak256(abi.encodePacked("pause", block.timestamp));
+        // Use time window to allow admins to approve the same operation
+        uint256 timeWindow = block.timestamp - (block.timestamp % CRITICAL_OPERATION_TIME_WINDOW);
+        bytes32 operationId = keccak256(abi.encodePacked("pause", timeWindow));
         
         // Check if already approved by this admin
         address[] storage approvers = criticalOperationApprovers[operationId];
