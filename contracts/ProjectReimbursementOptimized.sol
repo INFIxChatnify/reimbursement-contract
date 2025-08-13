@@ -633,8 +633,7 @@ contract ProjectReimbursementOptimized is
      * @param requestId The request ID
      * @param nonce The nonce used in commitment
      */
-    function _verifyAndRev
-ealApproval(uint256 requestId, uint256 nonce) private {
+    function _verifyAndRevealApproval(uint256 requestId, uint256 nonce) private {
         // Verify commitment exists and reveal window has passed
         bytes32 commitment = approvalCommitments[requestId][msg.sender];
         if (commitment == bytes32(0)) revert InvalidCommitment();
